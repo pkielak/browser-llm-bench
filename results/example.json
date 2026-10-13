@@ -1,0 +1,17 @@
+{
+  "backend": "litert",
+  "compat": {
+    "webgpu": true,
+    "adapter": "example-gpu",
+    "features": { "shader-f16": true },
+    "probe": { "fma_per_s_best": 1.2e12, "fma_per_s_median": 1.1e12 }
+  },
+  "engine": "LiteRT-LM (@litert-lm/core, WASM + WebGPU)",
+  "device": "example-gpu",
+  "model": "gemma-4-E2B-it-gpu.litertlm",
+  "params": { "tg": 128, "iters": 3, "prompt_chars": 768 },
+  "pp": { "best": 412.0, "median": 401.3 },
+  "tg": { "best": 18.9, "median": 18.4 },
+  "ttft_ms": 210,
+  "date": "2026-07-09T00:00:00Z"
+}

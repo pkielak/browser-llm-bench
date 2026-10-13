@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>llm-bench · WebGPU</title>
+<title>llm-bench · WebGPU · LiteRT</title>
 <style>
   body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
   h1 { font-size: 1.3rem; }
@@ -14,18 +14,17 @@
   table { border-collapse: collapse; }
   td, th { border: 1px solid #ccc; padding: .4rem .8rem; }
   #status { color: #555; }
-  .ok { color: #0a0; font-weight: bold; }
-  .bad { color: #a00; font-weight: bold; }
 </style>
 </head>
 <body>
-<h1>llm-bench — WebGPU</h1>
+<h1>llm-bench — WebGPU · LiteRT</h1>
 <p>Pure static page: WebGPU compatibility + raw GPU throughput probe, then a
-llama-bench-style model benchmark (llama.cpp-web, wasm + WebGPU).</p>
+llama-bench-style model benchmark on <b>LiteRT-LM</b>
+(<code>@litert-lm/core</code>, WASM + WebGPU).</p>
 
 <div class="row">
   <button id="compat">1 · Check WebGPU</button>
-  <label>Model <select id="model" style="min-width:220px"></select></label>
+  <label>Model <select id="model" style="min-width:260px"></select></label>
   <button id="run">2 · Run model bench</button>
 </div>
 <div id="status">loading…</div>
@@ -36,7 +35,7 @@ llama-bench-style model benchmark (llama.cpp-web, wasm + WebGPU).</p>
 <h2>Model benchmark</h2>
 <table id="table" style="display:none">
   <tr><th></th><th>best</th><th>median</th></tr>
-  <tr><td>pp (tok/s, 256 tok)</td><td id="pp-best"></td><td id="pp-med"></td></tr>
+  <tr><td>pp (tok/s, prefill)</td><td id="pp-best"></td><td id="pp-med"></td></tr>
   <tr><td>tg (tok/s, 128 tok)</td><td id="tg-best"></td><td id="tg-med"></td></tr>
   <tr><td>ttft (ms)</td><td id="ttft" colspan="2"></td></tr>
 </table>
@@ -45,7 +44,7 @@ llama-bench-style model benchmark (llama.cpp-web, wasm + WebGPU).</p>
 <pre id="json">—</pre>
 
 <script type="module">
-import { init, initModel, createContext } from "https://cdn.jsdelivr.net/npm/@ggml-org/llama.js@0.8.9/dist/llama.js";
+import { Engine, SamplerType } from "https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm";
 
 const $ = (id) => document.getElementById(id);
 const now = () => performance.now();
@@ -155,54 +154,64 @@ async function checkWebGPU() {
 }
 $("compat").onclick = () => checkWebGPU().catch(e => $("compat-out").textContent = "error: " + e.message);
 
-// ── 2 · model benchmark (llama-bench convention) ─────────────
-const PP = 256, TG = 128, ITERS = 3;
-const PROMPT = "The quick brown fox jumps over the lazy dog. ".repeat(64);
+// ── 2 · model benchmark (llama-bench convention, LiteRT-LM) ──
+// Fixed prompt for prefill, fixed 128-token generation for tg, 3
+// iterations, best + median. pp/tg come from the engine's own
+// benchmark counters (getBenchmarkInfo); ttft is wall-clock.
+const TG = 128, ITERS = 3;
+const PROMPT = "The quick brown fox jumps over the lazy dog. ".repeat(16);
 
 async function runBench(modelUrl) {
   const status = (s) => { $("status").textContent = s; };
   if (!COMPAT) await checkWebGPU();
   if (!COMPAT?.webgpu) throw new Error("WebGPU not available — run step 1 first");
 
-  status("initializing llama.cpp-web…");
-  await init({ gpu: true });
-  status("loading model…");
-  const model = await initModel({ model: { url: modelUrl }, gpu: { splitMode: "layer" } });
-  status("creating context…");
-  const ctx = await createContext({ model, nCtx: PP + TG + 64, gpu: { splitMode: "layer" } });
+  status("loading LiteRT-LM engine + model (can take a while)…");
+  const engine = await Engine.create({
+    model: modelUrl,
+    mainExecutorSettings: { maxNumTokens: 4096 },
+  });
 
-  const promptTokens = model.tokenize(PROMPT).slice(0, PP);
-  const ppSpeeds = [], tgSpeeds = [];
-  let ttft = 0;
+  const ppSpeeds = [], tgSpeeds = [], ttfts = [];
+  try {
+    for (let it = 0; it < ITERS; it++) {
+      status(`iteration ${it + 1}/${ITERS} — prefill + ${TG} tokens…`);
+      // fresh conversation each iteration: clean KV cache, clean counters
+      const chat = await engine.createConversation({
+        sessionConfig: {
+          maxOutputTokens: TG,
+          samplerParams: { type: SamplerType.TOP_P, temperature: 0.0, p: 1.0, k: 40 },
+        },
+      });
 
-  for (let it = 0; it < ITERS; it++) {
-    ctx.reset();
-    status(`iteration ${it + 1}/${ITERS} — prompt processing…`);
-    const t0 = now();
-    await ctx.eval(promptTokens);
-    ppSpeeds.push(PP / ((now() - t0) / 1000));
+      const t0 = now();
+      let first = -1, n = 0, tLast = 0;
+      for await (const chunk of chat.sendMessageStreaming(PROMPT)) {
+        if (first < 0) first = now();
+        n++;
+        tLast = now();
+      }
+      if (n === 0) throw new Error("model produced no tokens");
 
-    status(`iteration ${it + 1}/${ITERS} — generating ${TG} tokens…`);
-    ctx.sample();
-    const t1 = now();
-    for (let i = 0; i < TG; i++) {
-      const tok = ctx.sample();
-      await ctx.eval([tok]);
-      if (i === 0) ttft = now() - t1;
+      const info = await chat.getBenchmarkInfo();
+      ppSpeeds.push(info.lastPrefillTokensPerSecond);
+      tgSpeeds.push(n / ((tLast - first) / 1000));
+      ttfts.push(first - t0);
     }
-    tgSpeeds.push(TG / ((now() - t1) / 1000));
+  } finally {
+    await engine.delete();
   }
 
   const result = {
-    backend: "webgpu",
+    backend: "litert",
     compat: COMPAT,
-    engine: "llama.cpp-web (llama.js 0.8.9)",
+    engine: "LiteRT-LM (@litert-lm/core, WASM + WebGPU)",
     device: COMPAT.adapter || "unknown",
     model: modelUrl.split("/").pop(),
-    params: { pp: PP, tg: TG, iters: ITERS },
+    params: { tg: TG, iters: ITERS, prompt_chars: PROMPT.length },
     pp:  { best: Math.max(...ppSpeeds), median: median(ppSpeeds) },
     tg:  { best: Math.max(...tgSpeeds), median: median(tgSpeeds) },
-    ttft_ms: Math.round(ttft),
+    ttft_ms: Math.round(median(ttfts)),
     date: new Date().toISOString(),
   };
 
