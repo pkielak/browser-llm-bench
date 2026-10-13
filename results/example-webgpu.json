@@ -1,0 +1,16 @@
+{
+  "backend": "webgpu",
+  "compat": {
+    "webgpu": true,
+    "adapter": "example-gpu",
+    "probe": { "fma_per_s_best": 1.2e12, "fma_per_s_median": 1.1e12 }
+  },
+  "engine": "llama.cpp-web (llama.js 0.8.9)",
+  "device": "example-gpu",
+  "model": "qwen2.5-0.5b-q4_k_m.gguf",
+  "params": { "pp": 256, "tg": 128, "iters": 3 },
+  "pp": { "best": 123.4, "median": 120.1 },
+  "tg": { "best": 24.5, "median": 24.2 },
+  "ttft_ms": 310,
+  "date": "2026-07-09T00:00:00Z"
+}
