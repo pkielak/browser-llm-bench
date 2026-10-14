@@ -151,16 +151,44 @@ async function downloadRanged(
 			const end = i === RANGE_PARTS - 1 ? total - 1 : Math.min(start + chunkSize - 1, total - 1);
 			return fetch(model.url, { mode: 'cors', headers: { Range: `bytes=${start}-${end}` } }).then(
 				async (res) => {
-					const buffer = await res.arrayBuffer();
 					if (res.status === 200) {
 						// The server ignored the Range header — this is the full file.
+						const buffer = new Uint8Array(await res.arrayBuffer());
 						return { buffer, full: true } as const;
 					}
 					if (res.status !== 206) {
 						throw new Error(`HTTP ${res.status} for a byte-range request`);
 					}
-					received += buffer.byteLength;
-					onProgress?.(received / total);
+					// Stream the slice with live progress — a whole-slice
+					// `arrayBuffer()` would report nothing until the entire
+					// ~250 MB slice had landed (the bar would sit at 0%).
+					const reader = res.body?.getReader();
+					const chunks: Uint8Array[] = [];
+					let partBytes = 0;
+					if (reader) {
+						for (;;) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							if (value) {
+								chunks.push(value);
+								partBytes += value.length;
+								received += value.length;
+								onProgress?.(received / total);
+							}
+						}
+					} else {
+						const buf = new Uint8Array(await res.arrayBuffer());
+						chunks.push(buf);
+						partBytes = buf.length;
+						received += buf.length;
+					}
+					// Assemble this slice into one contiguous buffer.
+					const buffer = new Uint8Array(partBytes);
+					let offset = 0;
+					for (const c of chunks) {
+						buffer.set(c, offset);
+						offset += c.length;
+					}
 					return { buffer, full: false } as const;
 				}
 			);
