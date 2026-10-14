@@ -121,18 +121,25 @@ export async function runBench(
 		const wallTg = 1000 / perTokenMs;
 
 		// Prompt length in tokens: the context after the generation minus the
-		// generated tokens. When the engine does not expose the count, estimate
-		// from the character count (~4 chars/token for Gemma on English).
+		// generated tokens. When the engine does not expose a usable count
+		// (absent or 0), estimate from the character count (~4 chars/token for
+		// Gemma on English).
+		const ctx = bench?.tokensInContext;
 		const promptTokens =
-			bench?.tokensInContext != null
-				? Math.max(1, bench.tokensInContext - params.tg)
+			ctx != null && Number.isFinite(ctx) && ctx > 0
+				? Math.max(1, ctx - params.tg)
 				: Math.max(1, Math.round(params.prompt.length / 4));
 		const wallPp = promptTokens / (prefillMs / 1000);
 
+		// The engine counters exist in this build but read 0 (unpopulated) —
+		// only a positive, finite engine value beats the wall-clock derivation.
+		const pick = (engine: number | null | undefined, wall: number): number =>
+			engine != null && Number.isFinite(engine) && engine > 0 ? engine : wall;
+
 		const iteration: BenchIteration = {
 			index: i,
-			pp: bench?.prefillTokensPerSecond ?? wallPp,
-			tg: bench?.decodeTokensPerSecond ?? wallTg,
+			pp: pick(bench?.prefillTokensPerSecond, wallPp),
+			tg: pick(bench?.decodeTokensPerSecond, wallTg),
 			ttftMs: Math.round(prefillMs),
 			tA_ms: Math.round(tA),
 			tB_ms: Math.round(tB),
