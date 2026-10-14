@@ -39,6 +39,10 @@ export interface BenchIteration {
 	tg: number;
 	/** Time to first token (pure prefill), ms. */
 	ttftMs: number;
+	/** Wall time of the 1-token run, ms (marginal-timing method). */
+	tA_ms: number;
+	/** Wall time of the tg-token run, ms (marginal-timing method). */
+	tB_ms: number;
 	/** Streamed text chunks observed in the tg run (≈ generated tokens). */
 	tokens: number;
 }
@@ -130,6 +134,8 @@ export async function runBench(
 			pp: bench?.prefillTokensPerSecond ?? wallPp,
 			tg: bench?.decodeTokensPerSecond ?? wallTg,
 			ttftMs: Math.round(prefillMs),
+			tA_ms: Math.round(tA),
+			tB_ms: Math.round(tB),
 			tokens
 		};
 		iterations.push(iteration);

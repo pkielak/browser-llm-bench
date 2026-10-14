@@ -131,7 +131,7 @@
 		{#if iterations.length > 0}
 			<table>
 				<thead>
-					<tr><th></th><th>pp (tok/s)</th><th>tg (tok/s)</th><th>ttft (ms)</th></tr>
+					<tr><th></th><th>pp (tok/s)</th><th>tg (tok/s)</th><th>ttft (ms)</th><th>t₁ (ms)</th><th>t₁₂₈ (ms)</th></tr>
 				</thead>
 				<tbody>
 					{#each iterations as it}
@@ -140,6 +140,8 @@
 							<td>{fmt(it.pp)}</td>
 							<td>{fmt(it.tg)}</td>
 							<td>{it.ttftMs}</td>
+							<td>{it.tA_ms}</td>
+							<td>{it.tB_ms}</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -165,9 +167,12 @@
 
 	<footer>
 		<p class="hint">
-			Models download once and are kept in the browser's Cache Storage. The
-			inference engine runs in a Web Worker (LiteRT-LM WASM + WebGPU, loaded
-			dynamically from the pinned <code>@litert-lm/core</code> build).
+			<b>bench v2 — marginal timing</b> (tg from t₁₂₈ − t₁). If you do not see
+			the t₁ / t₁₂₈ columns you are running a stale build — rebuild and
+			hard-refresh. Models download once and are kept in the browser's Cache
+			Storage. The inference engine runs in a Web Worker (LiteRT-LM WASM +
+			WebGPU, loaded dynamically from the pinned <code>@litert-lm/core</code>
+			build).
 		</p>
 	</footer>
 </main>
