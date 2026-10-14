@@ -26,6 +26,16 @@ export const MODEL_CACHE_NAME = 'llm-bench-models-v1';
 /** Progress callback: called with a 0..1 fraction as the file downloads. */
 export type DownloadProgress = (fraction: number) => void;
 
+/**
+ * How many parallel range slices to download a big file with. One HTTP
+ * connection to the HF CDN is often the bottleneck; N concurrent `Range`
+ * requests use N connections (browsers allow ~6 per host, the rest queue —
+ * 8 is a good balance). Peak memory is ~2x the file size either way.
+ */
+const RANGE_PARTS = 8;
+/** Files below this size are not worth splitting. */
+const RANGE_MIN_BYTES = 32 * 1024 * 1024;
+
 function cacheAvailable(): boolean {
 	return typeof caches !== 'undefined' && caches != null;
 }
@@ -57,6 +67,8 @@ export async function downloadModel(model: LlmModel, onProgress?: DownloadProgre
 		return cached;
 	}
 
+	// First pass: learn the size + whether the server supports byte ranges
+	// (HF's CDN does). The body is cancelled — the real download follows.
 	let response: Response;
 	try {
 		response = await fetch(model.url, { mode: 'cors' });
@@ -68,14 +80,41 @@ export async function downloadModel(model: LlmModel, onProgress?: DownloadProgre
 	if (!response.ok) {
 		throw new Error(`Downloading the model failed (HTTP ${response.status}). Check your connection and try again.`);
 	}
-
 	const total = Number(response.headers.get('content-length') ?? 0);
+	const acceptRanges = (response.headers.get('accept-ranges') ?? '')
+		.toLowerCase()
+		.includes('bytes');
+	await response.body?.cancel().catch(() => {});
 
+	// Big file + range support → parallel slice download (much faster than a
+	// single connection). Any failure falls back to the single stream.
+	if (total >= RANGE_MIN_BYTES && acceptRanges) {
+		try {
+			return await downloadRanged(model, total, onProgress);
+		} catch {
+			// Fall through to the single-stream download below.
+		}
+	}
+
+	const single = await fetch(model.url, { mode: 'cors' });
+	if (!single.ok) {
+		throw new Error(`Downloading the model failed (HTTP ${single.status}). Check your connection and try again.`);
+	}
+	return downloadStreamed(model, single, total, onProgress);
+}
+
+/** Single-connection download of an open response, with progress. */
+async function downloadStreamed(
+	model: LlmModel,
+	response: Response,
+	total: number,
+	onProgress?: DownloadProgress
+): Promise<Blob> {
 	const reader = response.body?.getReader();
 	if (!reader) {
 		// No readable stream (rare); just buffer the whole body.
 		const blob = new Blob([await response.arrayBuffer()], { type: 'application/octet-stream' });
-		onProgress?.(1);
+		await onProgress?.(1);
 		return storeBlob(model, blob);
 	}
 
@@ -92,6 +131,48 @@ export async function downloadModel(model: LlmModel, onProgress?: DownloadProgre
 	}
 	onProgress?.(1);
 	return storeBlob(model, new Blob(chunks, { type: 'application/octet-stream' }));
+}
+
+/**
+ * Download the file as `RANGE_PARTS` parallel byte-range slices and
+ * assemble them. If a server ignores `Range` and answers a slice request
+ * with the *whole* file (200 instead of 206), that body is used as-is.
+ */
+async function downloadRanged(
+	model: LlmModel,
+	total: number,
+	onProgress?: DownloadProgress
+): Promise<Blob> {
+	const chunkSize = Math.ceil(total / RANGE_PARTS);
+	let received = 0;
+	const results = await Promise.all(
+		Array.from({ length: RANGE_PARTS }, (_, i) => {
+			const start = i * chunkSize;
+			const end = i === RANGE_PARTS - 1 ? total - 1 : Math.min(start + chunkSize - 1, total - 1);
+			return fetch(model.url, { mode: 'cors', headers: { Range: `bytes=${start}-${end}` } }).then(
+				async (res) => {
+					const buffer = await res.arrayBuffer();
+					if (res.status === 200) {
+						// The server ignored the Range header — this is the full file.
+						return { buffer, full: true } as const;
+					}
+					if (res.status !== 206) {
+						throw new Error(`HTTP ${res.status} for a byte-range request`);
+					}
+					received += buffer.byteLength;
+					onProgress?.(received / total);
+					return { buffer, full: false } as const;
+				}
+			);
+		})
+	);
+	const full = results.find((r) => r.full);
+	onProgress?.(1);
+	const blob = new Blob(
+		full ? [full.buffer] : results.map((r) => r.buffer),
+		{ type: 'application/octet-stream' }
+	);
+	return storeBlob(model, blob);
 }
 
 /** Best-effort store of a model blob in Cache Storage (never throws). */

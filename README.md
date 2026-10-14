@@ -75,6 +75,9 @@ npm run build && npm run preview   # serves build/ on http://localhost:4173
 ```
 
 Notes:
+- Downloads are **parallel byte-range slices** (8 concurrent `Range`
+  requests — a single connection to the HF CDN is the usual bottleneck),
+  with a single-stream fallback if the server does not support ranges.
 - The page needs a **secure context** for Cache Storage + WebGPU:
   `localhost` works; plain HTTP on a LAN IP degrades (no cache persistence,
   no WebGPU → WASM).
