@@ -1,6 +1,5 @@
 /**
  * Network-access checks for model downloads.
- * (Borrowed from Pancratius, `src/lib/llm/network.ts`.)
  *
  * Downloading an on-device model file requires an active connection. This
  * module gives the manager a single, cheap way to answer "can we download
@@ -23,9 +22,20 @@ export const NO_NETWORK_MESSAGE =
 	'No network connection available. Make sure WiFi is turned on and you can reach ' +
 	'the internet, then try downloading again.';
 
+/** The domain the models are downloaded from — the probe target. */
+const PROBE_URL = 'https://huggingface.co/robots.txt';
+/** Give up on the probe after this long. */
+const PROBE_TIMEOUT_MS = 5000;
+
 /**
  * Check whether the browser can use the network to download files right now.
- * Never throws. An inability to read the flag is treated as "online".
+ * Never throws.
+ *
+ * `navigator.onLine` alone is not trustworthy — Chromium is known to leave
+ * it stale-`false` after a connection change even though the network works —
+ * so a `false` flag is only a fast-path out; otherwise a real reachability
+ * probe is done against the download domain. `no-cors` means an opaque
+ * response is enough: *resolving* proves the network is reachable.
  */
 export async function checkNetworkAccess(): Promise<NetworkAccess> {
 	try {
@@ -33,7 +43,15 @@ export async function checkNetworkAccess(): Promise<NetworkAccess> {
 			return { online: false };
 		}
 	} catch {
-		// Reading `navigator.onLine` failed → assume online (see module doc).
+		// Reading `navigator.onLine` failed → fall through to the probe.
 	}
-	return { online: true };
+	try {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+		await fetch(PROBE_URL, { method: 'HEAD', mode: 'no-cors', signal: controller.signal });
+		clearTimeout(timer);
+		return { online: true };
+	} catch {
+		return { online: false };
+	}
 }

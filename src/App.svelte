@@ -16,8 +16,13 @@
 
 	// Auto-start: begin downloading the selected (default) model on load,
 	// so the user does not have to re-select it to trigger the download.
+	// The one-shot flag is essential: `selectModel` does not flip the status
+	// synchronously (the async loadModel does), so without it this effect
+	// would re-trigger itself on every store update → effect_update_depth_exceeded.
+	let autoStarted = $state(false);
 	$effect(() => {
-		if (modelState.status.state === 'idle' && modelState.modelId) {
+		if (!autoStarted && modelState.status.state === 'idle' && modelState.modelId) {
+			autoStarted = true;
 			selectModel(modelState.modelId);
 		}
 	});
