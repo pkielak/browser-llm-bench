@@ -63,7 +63,16 @@ npm run check      # svelte-check
 ```
 
 Then: pick a model (it downloads once — E2B is ~2 GB — and is kept in Cache
-Storage), wait for "Model ready", hit **Run benchmark**.
+Storage — it starts automatically), wait for "Model ready", hit **Run
+benchmark**.
+
+**Serve the build over HTTP — do not open `build/index.html` directly.**
+Module scripts + the Web Worker do not load from `file://`, so the page
+hangs on a blank tab:
+
+```sh
+npm run build && npm run preview   # serves build/ on http://localhost:4173
+```
 
 Notes:
 - The page needs a **secure context** for Cache Storage + WebGPU:
