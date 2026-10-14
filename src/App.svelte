@@ -131,8 +131,12 @@
 		{#if iterations.length > 0}
 			<table>
 				<thead>
-					<tr><th></th><th>pp (tok/s)</th><th>tg (tok/s)</th><th>ttft (ms)</th><th>t₁ (ms)</th><th>t₁₂₈ (ms)</th></tr>
-				</thead>
+					<tr>
+						<th></th><th>pp (tok/s)</th><th>tg (tok/s)</th><th>ttft (ms)</th>
+						<th>t₁ (ms)</th><th>t₁₂₈ (ms)</th>
+						<th>pp eng</th><th>tg eng</th><th>ctx tok</th>
+					</tr>
+					</thead>
 				<tbody>
 					{#each iterations as it}
 						<tr>
@@ -142,6 +146,9 @@
 							<td>{it.ttftMs}</td>
 							<td>{it.tA_ms}</td>
 							<td>{it.tB_ms}</td>
+							<td>{fmt(it.pp_engine)}</td>
+							<td>{fmt(it.tg_engine)}</td>
+							<td>{it.tokens_in_context ?? '—'}</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -167,9 +174,11 @@
 
 	<footer>
 		<p class="hint">
-			<b>bench v2 — marginal timing</b> (tg from t₁₂₈ − t₁). If you do not see
-			the t₁ / t₁₂₈ columns you are running a stale build — rebuild and
-			hard-refresh. Models download once and are kept in the browser's Cache
+			<b>bench v3 — marginal timing</b> (tg from t₁₂₈ − t₁; wall-clock is
+			preferred, the engine's own counters are shown as reference — "eng"
+			columns). If you do not see the eng columns you are running a stale
+			build — rebuild and hard-refresh. Models download once and are kept in
+			the browser's Cache
 			Storage. The inference engine runs in a Web Worker (LiteRT-LM WASM +
 			WebGPU, loaded dynamically from the pinned <code>@litert-lm/core</code>
 			build).

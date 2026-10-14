@@ -16,8 +16,13 @@ import { generate, getBenchmark, llm, resetConversation } from './llm/manager';
  * - **ttft** = tA − decode step (pure prefill, ms)
  * - **pp**   = prompt tokens / prefill (tok/s)
  *
- * When the loaded runtime exposes its own counters (`getBenchmarkInfo`,
- * `getTokenCount`) they are preferred over the wall-clock derivations.
+ * The **wall-clock derivations are the primary numbers**. The engine's own
+ * counters (`getBenchmarkInfo`, `getTokenCount`) are recorded as separate
+ * reference fields (`pp_engine`, `tg_engine`, `tokens_in_context`): in the
+ * current build the prefill counter is populated but self-inconsistent
+ * (it measures the engine's internal tokenization, not the prompt), so it
+ * must not silently replace the wall-clock value.
+ *
  * Each run starts from a `reset()` — fresh conversation, clean KV cache,
  * fresh engine counters. Best + median over `iters` runs.
  */
@@ -33,9 +38,9 @@ export interface BenchParams {
 
 export interface BenchIteration {
 	index: number;
-	/** Prefill tok/s. */
-	pp: number | null;
-	/** Generation tok/s. */
+	/** Prefill tok/s (wall-clock: prompt tokens / prefill time). */
+	pp: number;
+	/** Generation tok/s (wall-clock: marginal decode step). */
 	tg: number;
 	/** Time to first token (pure prefill), ms. */
 	ttftMs: number;
@@ -45,6 +50,17 @@ export interface BenchIteration {
 	tB_ms: number;
 	/** Streamed text chunks observed in the tg run (≈ generated tokens). */
 	tokens: number;
+	/** The engine's own prefill counter, tok/s (reference; null when unpopulated). */
+	pp_engine: number | null;
+	/** The engine's own decode counter, tok/s (reference; null when unpopulated). */
+	tg_engine: number | null;
+	/** Tokens in the conversation context after the tg run (prompt + output). */
+	tokens_in_context: number | null;
+}
+
+/** A positive, finite engine counter value, else null (0 means unpopulated). */
+function positive(v: number | null | undefined): number | null {
+	return v != null && Number.isFinite(v) && v > 0 ? v : null;
 }
 
 /** The params recorded in a result (the prompt itself is not stored). */
@@ -59,7 +75,7 @@ export interface BenchResult {
 	model: string;
 	params: BenchResultParams;
 	iterations: BenchIteration[];
-	pp: { best: number | null; median: number | null };
+	pp: { best: number; median: number };
 	tg: { best: number; median: number };
 	ttft_ms: number;
 	date: string;
@@ -131,31 +147,28 @@ export async function runBench(
 				: Math.max(1, Math.round(params.prompt.length / 4));
 		const wallPp = promptTokens / (prefillMs / 1000);
 
-		// The engine counters exist in this build but read 0 (unpopulated) —
-		// only a positive, finite engine value beats the wall-clock derivation.
-		const pick = (engine: number | null | undefined, wall: number): number =>
-			engine != null && Number.isFinite(engine) && engine > 0 ? engine : wall;
-
 		const iteration: BenchIteration = {
 			index: i,
-			pp: pick(bench?.prefillTokensPerSecond, wallPp),
-			tg: pick(bench?.decodeTokensPerSecond, wallTg),
+			pp: wallPp,
+			tg: wallTg,
 			ttftMs: Math.round(prefillMs),
 			tA_ms: Math.round(tA),
 			tB_ms: Math.round(tB),
-			tokens
+			tokens,
+			pp_engine: positive(bench?.prefillTokensPerSecond),
+			tg_engine: positive(bench?.decodeTokensPerSecond),
+			tokens_in_context: positive(bench?.tokensInContext)
 		};
 		iterations.push(iteration);
 		onIteration?.(iteration);
 	}
 
-	const ppValues = iterations.map((it) => it.pp).filter((v): v is number => v !== null);
 	return {
 		backend: state.backend === 'wasm' ? 'wasm' : 'webgpu',
 		model: model.name,
 		params: { tg: params.tg, iters: params.iters, prompt_chars: params.prompt.length },
 		iterations,
-		pp: { best: ppValues.length ? Math.max(...ppValues) : null, median: median(ppValues) },
+		pp: { best: Math.max(...iterations.map((it) => it.pp)), median: median(iterations.map((it) => it.pp)) ?? 0 },
 		tg: { best: Math.max(...iterations.map((it) => it.tg)), median: median(iterations.map((it) => it.tg)) ?? 0 },
 		ttft_ms: Math.round(median(iterations.map((it) => it.ttftMs)) ?? 0),
 		date: new Date().toISOString()

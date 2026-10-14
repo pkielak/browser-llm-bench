@@ -24,9 +24,16 @@ KV cache):
 - **pp** = prompt tokens / prefill — tok/s (prompt tokens from
   `conversation.getTokenCount()` when exposed, else chars/4 estimate)
 
-If the loaded runtime exposes its own counters (`getBenchmarkInfo()`), they
-are preferred over the wall-clock derivations. 3 iterations; best + median
-reported.
+The **wall-clock derivations are the primary numbers**. The engine's own
+counters (`getBenchmarkInfo()`, `getTokenCount()`) are recorded per iteration
+as reference fields (`pp_engine`, `tg_engine`, `tokens_in_context`) — in the
+current 0.18.0 build the prefill counter is populated but self-inconsistent
+(same prompt → 19.8 vs 43 tok/s across runs; it measures the engine's
+internal tokenization, not the prompt), so it must not silently replace the
+wall-clock value. 3 iterations; best + median reported.
+
+Note run 1 is usually a warm-up (WebGPU module compile + weight upload) and
+runs slower than runs 2–3 — the best/median handle that.
 
 The page shows a copyable result JSON:
 
