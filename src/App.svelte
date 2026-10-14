@@ -13,6 +13,14 @@
 	// Mirror the store into a reactive local so the component updates.
 	let modelState: LlmState = $state({ modelId: null, activeModel: null, backend: 'wasm', status: { state: 'idle' } });
 	$effect(() => llm.subscribe((v) => (modelState = v)));
+
+	// Auto-start: begin downloading the selected (default) model on load,
+	// so the user does not have to re-select it to trigger the download.
+	$effect(() => {
+		if (modelState.status.state === 'idle' && modelState.modelId) {
+			selectModel(modelState.modelId);
+		}
+	});
 	const model = $derived(modelState.activeModel ?? getModel(modelState.modelId ?? undefined));
 
 	let benching = $state(false);
@@ -80,7 +88,8 @@
 
 		<div class="status">
 			{#if modelState.status.state === 'idle'}
-				<p>Model not loaded yet — pick one above to download it.</p>
+				<p>Model not loaded yet.</p>
+				<button onclick={() => model && pick(model.id)}>Download model</button>
 			{:else if modelState.status.state === 'downloading'}
 				<p>Downloading model… {progressPct}%</p>
 				<progress value={progressPct} max={100}></progress>

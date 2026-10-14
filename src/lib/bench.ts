@@ -83,7 +83,6 @@ export async function runBench(
 		await resetConversation();
 
 		let first = 0;
-		let last = 0;
 		let tokens = 0;
 		const t0 = performance.now();
 		await generate(
@@ -92,19 +91,34 @@ export async function runBench(
 				onText: () => {
 					tokens++;
 					if (!first) first = performance.now();
-					last = performance.now();
 				},
 				onEnd: () => {}
 			},
 			{ maxOutputTokens: params.tg }
 		);
+		const tEnd = performance.now();
 		const bench = await getBenchmark();
-		if (tokens === 0) throw new Error('The model produced no tokens.');
+		if (!first) throw new Error('The model produced no tokens.');
 
-		const wallTg = tokens > 1 ? (tokens - 1) / ((last - first) / 1000) : 0;
+		// Wall-clock measurements. Streaming chunks are not 1:1 with tokens
+		// (the engine batches them), so speed is computed from the *requested*
+		// generation length over the wall time, not from the chunk count.
+		const genMs = tEnd - first;
+		const wallTg = genMs > 0 ? params.tg / (genMs / 1000) : 0;
+
+		// Prompt length in tokens: the context after the generation minus the
+		// generated tokens (null when the engine does not expose the count —
+		// pp then falls back to the engine counter only).
+		let wallPp: number | null = null;
+		if (bench?.tokensInContext != null) {
+			const promptTokens = Math.max(1, bench.tokensInContext - params.tg);
+			const ttftMs = first - t0;
+			if (ttftMs > 0) wallPp = promptTokens / (ttftMs / 1000);
+		}
+
 		const iteration: BenchIteration = {
 			index: i,
-			pp: bench?.prefillTokensPerSecond ?? null,
+			pp: bench?.prefillTokensPerSecond ?? wallPp,
 			tg: bench?.decodeTokensPerSecond ?? wallTg,
 			ttftMs: Math.round(first - t0),
 			tokens

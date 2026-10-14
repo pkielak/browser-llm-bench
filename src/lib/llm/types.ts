@@ -88,6 +88,8 @@ export interface LlmGenerateOptions {
 export interface LlmBenchmarkInfo {
 	prefillTokensPerSecond: number | null;
 	decodeTokensPerSecond: number | null;
+	/** Total tokens in the conversation context after the generation (prompt + output). */
+	tokensInContext: number | null;
 }
 
 /**

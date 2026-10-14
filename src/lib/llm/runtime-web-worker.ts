@@ -47,6 +47,8 @@ interface LiteRtBenchmarkInfo {
 interface LiteRtConversation {
 	sendMessageStreaming(prompt: string): AsyncIterable<LiteRtStreamChunk>;
 	getBenchmarkInfo?(): Promise<LiteRtBenchmarkInfo>;
+	/** Current token count of the conversation context (prompt + output). */
+	getTokenCount?(): Promise<number>;
 }
 /**
  * The per-conversation `sessionConfig`. Only the fields we rely on are named;
@@ -100,6 +102,8 @@ type InMessage =
 export interface BenchCounters {
 	prefill: number | null;
 	decode: number | null;
+	/** Total tokens in the conversation context after the generation (prompt + output). */
+	tokensInContext: number | null;
 }
 
 function describeCause(err: unknown): string {
@@ -205,16 +209,20 @@ async function handleGenerate(msg: Extract<InMessage, { kind: 'generate' }>): Pr
 
 	// The engine's own speed counters for this generation (v0.18+; older
 	// builds have no `getBenchmarkInfo` — report nulls, the bench falls back
-	// to wall-clock measurements).
-	let bench: BenchCounters = { prefill: null, decode: null };
+	// to wall-clock measurements). `getTokenCount()` lets the bench estimate
+	// the prompt length in tokens (context − generated).
+	let bench: BenchCounters = { prefill: null, decode: null, tokensInContext: null };
 	try {
 		const info = await conversation.getBenchmarkInfo?.();
-		bench = {
-			prefill: info?.lastPrefillTokensPerSecond ?? null,
-			decode: info?.lastDecodeTokensPerSecond ?? null
-		};
+		bench.prefill = info?.lastPrefillTokensPerSecond ?? null;
+		bench.decode = info?.lastDecodeTokensPerSecond ?? null;
 	} catch {
 		// Counters unavailable — wall-clock fallback on the main thread.
+	}
+	try {
+		bench.tokensInContext = (await conversation.getTokenCount?.()) ?? null;
+	} catch {
+		// Not exposed — the bench estimates what it can.
 	}
 	(self as unknown as Worker).postMessage({ kind: 'done', id: msg.id, bench });
 }

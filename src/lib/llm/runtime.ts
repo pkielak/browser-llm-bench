@@ -192,7 +192,8 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 			if (!lastBench) return null;
 			return {
 				prefillTokensPerSecond: lastBench.prefill,
-				decodeTokensPerSecond: lastBench.decode
+				decodeTokensPerSecond: lastBench.decode,
+				tokensInContext: lastBench.tokensInContext
 			};
 		},
 		async close() {
