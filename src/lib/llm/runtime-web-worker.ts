@@ -207,24 +207,37 @@ async function handleGenerate(msg: Extract<InMessage, { kind: 'generate' }>): Pr
 		}
 	}
 
-	// The engine's own speed counters for this generation (v0.18+; older
-	// builds have no `getBenchmarkInfo` — report nulls, the bench falls back
-	// to wall-clock measurements). `getTokenCount()` lets the bench estimate
-	// the prompt length in tokens (context − generated).
-	let bench: BenchCounters = { prefill: null, decode: null, tokensInContext: null };
-	try {
-		const info = await conversation.getBenchmarkInfo?.();
-		bench.prefill = info?.lastPrefillTokensPerSecond ?? null;
-		bench.decode = info?.lastDecodeTokensPerSecond ?? null;
-	} catch {
-		// Counters unavailable — wall-clock fallback on the main thread.
-	}
-	try {
-		bench.tokensInContext = (await conversation.getTokenCount?.()) ?? null;
-	} catch {
-		// Not exposed — the bench estimates what it can.
-	}
-	(self as unknown as Worker).postMessage({ kind: 'done', id: msg.id, bench });
+	// The stream is over — report `done` **immediately**. The engine's own
+	// speed counters (v0.18+ `getBenchmarkInfo`) and the context token count
+	// are fetched *afterwards, detached and timeout-guarded*: on some builds
+	// those calls never settle, and blocking `done` on them would hang the
+	// whole generation (and hold the `busy` flag against the next `reset`).
+	// When the counters do arrive they are sent as a separate `bench`
+	// message; the bench always has its wall-clock numbers either way.
+	(self as unknown as Worker).postMessage({ kind: 'done', id: msg.id });
+
+	void (async () => {
+		const bench: BenchCounters = { prefill: null, decode: null, tokensInContext: null };
+		const within = (ms: number) => new Promise<undefined>((r) => setTimeout(() => r(undefined), ms));
+		try {
+			const info = (await Promise.race([conversation.getBenchmarkInfo?.(), within(2000)])) as
+				| LiteRtBenchmarkInfo
+				| undefined;
+			bench.prefill = info?.lastPrefillTokensPerSecond ?? null;
+			bench.decode = info?.lastDecodeTokensPerSecond ?? null;
+		} catch {
+			// Counters unavailable.
+		}
+		try {
+			bench.tokensInContext =
+				((await Promise.race([conversation.getTokenCount?.(), within(2000)])) as number | undefined) ?? null;
+		} catch {
+			// Not exposed.
+		}
+		if (bench.prefill != null || bench.decode != null || bench.tokensInContext != null) {
+			(self as unknown as Worker).postMessage({ kind: 'bench', bench });
+		}
+	})();
 }
 
 /** Drop the active conversation: the next generate() starts a fresh one

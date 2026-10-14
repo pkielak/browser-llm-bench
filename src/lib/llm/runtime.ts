@@ -76,9 +76,16 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 		| { kind: 'ready' }
 		| { kind: 'closed' }
 		| { kind: 'text'; id: number; text: string }
-		| { kind: 'done'; id: number; bench: BenchCounters }
+		| { kind: 'done'; id: number }
+		| { kind: 'bench'; bench: BenchCounters }
 		| { kind: 'reset-done'; id: number }
 		| { kind: 'error'; id: number | null; message: string };
+
+	const toBenchInfo = (b: BenchCounters): LlmBenchmarkInfo => ({
+		prefillTokensPerSecond: b.prefill,
+		decodeTokensPerSecond: b.decode,
+		tokensInContext: b.tokensInContext
+	});
 
 	interface Pending {
 		resolve: () => void;
@@ -88,8 +95,11 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 	const pending = new Map<number, Pending>();
 	let lifecycle: Pending | null = null;
 	let closed = false;
-	// The engine counters from the most recent generate().
+	// The engine counters from the most recent generate(). They arrive in a
+	// separate `bench` message *after* `done` (the worker fetches them
+	// detached, timeout-guarded — some builds never settle them).
 	let lastBench: BenchCounters | null = null;
+	let benchWaiters: Array<(b: BenchCounters) => void> = [];
 	// The `generate()` currently streaming (at most one at a time).
 	let activeCallbacks: { onText: (t: string) => void } | null = null;
 
@@ -113,8 +123,13 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 				activeCallbacks?.onText(msg.text);
 				break;
 			case 'done':
-				lastBench = msg.bench;
 				settle(msg.id, null);
+				break;
+			case 'bench':
+				lastBench = msg.bench;
+				const waiters = benchWaiters;
+				benchWaiters = [];
+				waiters.forEach((w) => w(msg.bench));
 				break;
 			case 'reset-done':
 				settle(msg.id, null);
@@ -189,12 +204,17 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 			await done;
 		},
 		async benchmark(): Promise<LlmBenchmarkInfo | null> {
-			if (!lastBench) return null;
-			return {
-				prefillTokensPerSecond: lastBench.prefill,
-				decodeTokensPerSecond: lastBench.decode,
-				tokensInContext: lastBench.tokensInContext
-			};
+			if (lastBench) return toBenchInfo(lastBench);
+			// The counters may still be in flight (they land after `done`).
+			// Give them up to 2 s; the bench falls back to wall-clock numbers.
+			const b = await new Promise<BenchCounters | null>((resolve) => {
+				const timer = setTimeout(() => resolve(lastBench), 2000);
+				benchWaiters.push(() => {
+					clearTimeout(timer);
+					resolve(lastBench);
+				});
+			});
+			return b ? toBenchInfo(b) : null;
 		},
 		async close() {
 			if (closed) return;

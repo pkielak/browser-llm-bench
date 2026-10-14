@@ -107,13 +107,17 @@ export async function runBench(
 		const wallTg = genMs > 0 ? params.tg / (genMs / 1000) : 0;
 
 		// Prompt length in tokens: the context after the generation minus the
-		// generated tokens (null when the engine does not expose the count —
-		// pp then falls back to the engine counter only).
+		// generated tokens. When the engine does not expose the count, estimate
+		// from the character count (~4 chars/token for Gemma on English) —
+		// better a labelled-ish estimate than no number at all.
 		let wallPp: number | null = null;
-		if (bench?.tokensInContext != null) {
-			const promptTokens = Math.max(1, bench.tokensInContext - params.tg);
-			const ttftMs = first - t0;
-			if (ttftMs > 0) wallPp = promptTokens / (ttftMs / 1000);
+		const ttftMs = first - t0;
+		if (ttftMs > 0) {
+			const promptTokens =
+				bench?.tokensInContext != null
+					? Math.max(1, bench.tokensInContext - params.tg)
+					: Math.max(1, Math.round(params.prompt.length / 4));
+			wallPp = promptTokens / (ttftMs / 1000);
 		}
 
 		const iteration: BenchIteration = {
