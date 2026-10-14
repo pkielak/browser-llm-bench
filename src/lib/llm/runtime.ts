@@ -71,7 +71,7 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 	// nothing by dropping `type: 'module'`.
 	const worker = new Worker(new URL('./runtime-web-worker.ts', import.meta.url));
 
-	type BenchCounters = { prefill: number | null; decode: number | null };
+	type BenchCounters = { prefill: number | null; decode: number | null; tokensInContext: number | null };
 	type OutMessage =
 		| { kind: 'ready' }
 		| { kind: 'closed' }
