@@ -112,8 +112,10 @@
 	<section>
 		<h2>Benchmark</h2>
 		<p class="hint">
-			pp: {BENCH_PROMPT.length} chars prompt · tg: {TG} tokens · {ITERS} iterations
-			(fresh conversation each) · best + median
+			{BENCH_PROMPT.length} chars prompt · tg over {TG} tokens · {ITERS} iterations
+			· best + median — the engine does not stream per token, so tg is
+			measured as (t<sub>{TG}</sub> − t<sub>1</sub>) / ({TG} − 1) and ttft as the
+			pure-prefill part of the 1-token run
 		</p>
 		<button class="primary" disabled={benching || modelState.status.state !== 'ready'} onclick={bench}>
 			{benching ? 'Running…' : 'Run benchmark'}

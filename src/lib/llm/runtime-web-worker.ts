@@ -133,6 +133,10 @@ let engine: LiteRtEngine | null = null;
 // One conversation per engine: keeps multi-turn context alive across
 // `generate()` calls until `reset` drops it or the worker is closed.
 let conversation: LiteRtConversation | null = null;
+// The `maxOutputTokens` cap the live conversation was created with. The cap
+// is fixed at `createConversation` time — a generate() requesting a
+// different cap gets a fresh conversation.
+let conversationCap: number | null = null;
 let busy = false;
 
 async function handleCreate(msg: Extract<InMessage, { kind: 'create' }>): Promise<void> {
@@ -192,12 +196,19 @@ async function handleCreate(msg: Extract<InMessage, { kind: 'create' }>): Promis
 
 async function handleGenerate(msg: Extract<InMessage, { kind: 'generate' }>): Promise<void> {
 	if (!engine) throw new Error('The on-device model is not loaded yet.');
-	// `sessionConfig.maxOutputTokens` caps a single generation (in tokens).
-	// The context window itself is set on the engine at create time (see
+	// `sessionConfig.maxOutputTokens` caps a single generation (in tokens) and
+	// is fixed when the conversation is created — if this call wants a
+	// different cap, drop the conversation and create a fresh one. The
+	// context window itself is set on the engine at create time (see
 	// `handleCreate`). Benchmark runs pass their own cap.
+	const cap = msg.maxOutputTokens ?? MAX_OUTPUT_TOKENS;
+	if (conversation && conversationCap !== cap) {
+		conversation = null;
+	}
 	conversation ??= await engine.createConversation({
-		sessionConfig: { maxOutputTokens: msg.maxOutputTokens ?? MAX_OUTPUT_TOKENS }
+		sessionConfig: { maxOutputTokens: cap }
 	});
+	conversationCap = cap;
 	const stream = conversation.sendMessageStreaming(msg.prompt);
 	for await (const chunk of stream) {
 		for (const item of chunk.content ?? []) {
@@ -244,6 +255,7 @@ async function handleGenerate(msg: Extract<InMessage, { kind: 'generate' }>): Pr
  * (clean KV cache and fresh engine speed counters). */
 function handleReset(): void {
 	conversation = null;
+	conversationCap = null;
 }
 
 async function handleClose(): Promise<void> {

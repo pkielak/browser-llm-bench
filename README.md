@@ -12,13 +12,21 @@ benchmark harness (`src/lib/bench.ts`).
 
 ## Metrics (llama-bench convention)
 
-- **pp** — prefill: tok/s over a fixed prompt, from the engine's own counter
-  (`conversation.getBenchmarkInfo().lastPrefillTokensPerSecond`)
-- **tg** — token generation: tok/s over a fixed 128-token generation
-  (engine counter, wall-clock fallback)
-- **ttft** — ms from submit to first streamed token
-- 3 iterations, **fresh conversation each** (`reset()` → clean KV cache +
-  counters); best + median reported
+The engine build does not stream per token (the whole generation arrives in
+one batch), so the metrics are derived from **marginal run differences** —
+two runs per iteration, each from a fresh conversation (`reset()` → clean
+KV cache):
+
+- run A: 1 token → tA ≈ prefill + 1 decode step
+- run B: 128 tokens → tB ≈ prefill + 128 decode steps
+- **tg** = 1000 / ((tB − tA) / 127) — tok/s, prefill cancels out
+- **ttft** = tA − one decode step — pure prefill, ms
+- **pp** = prompt tokens / prefill — tok/s (prompt tokens from
+  `conversation.getTokenCount()` when exposed, else chars/4 estimate)
+
+If the loaded runtime exposes its own counters (`getBenchmarkInfo()`), they
+are preferred over the wall-clock derivations. 3 iterations; best + median
+reported.
 
 The page shows a copyable result JSON:
 

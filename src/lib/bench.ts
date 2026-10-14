@@ -3,17 +3,23 @@ import { generate, getBenchmark, llm, resetConversation } from './llm/manager';
 
 /**
  * The benchmark harness — llama-bench convention on top of the borrowed
- * LiteRT runtime:
+ * LiteRT runtime.
  *
- * - **pp** (prefill) — tok/s over a fixed prompt, from the engine's own
- *   counter (`getBenchmarkInfo().lastPrefillTokensPerSecond`) when the loaded
- *   runtime exposes it.
- * - **tg** (token generation) — tok/s over a fixed `tg`-token generation;
- *   engine counter when available, wall-clock over streamed chunks otherwise.
- * - **ttft** — ms from submit to the first streamed token.
+ * This engine build does not stream per token (the whole generation arrives
+ * in one batch at the end), so every metric is derived from **marginal run
+ * differences**, two runs per iteration:
  *
- * Each iteration starts from a `reset()` — fresh conversation, clean KV
- * cache, fresh engine counters. Best + median over `iters` runs.
+ * - run A: 1 token     → tA ≈ prefill + 1 decode step
+ * - run B: `tg` tokens → tB ≈ prefill + `tg` decode steps
+ * - decode step = (tB − tA) / (tg − 1)   (the prefill cancels out)
+ * - **tg**   = 1000 / decode step (tok/s)
+ * - **ttft** = tA − decode step (pure prefill, ms)
+ * - **pp**   = prompt tokens / prefill (tok/s)
+ *
+ * When the loaded runtime exposes its own counters (`getBenchmarkInfo`,
+ * `getTokenCount`) they are preferred over the wall-clock derivations.
+ * Each run starts from a `reset()` — fresh conversation, clean KV cache,
+ * fresh engine counters. Best + median over `iters` runs.
  */
 
 export interface BenchParams {
@@ -27,13 +33,13 @@ export interface BenchParams {
 
 export interface BenchIteration {
 	index: number;
-	/** Prefill tok/s (null when the engine exposes no counter). */
+	/** Prefill tok/s. */
 	pp: number | null;
 	/** Generation tok/s. */
 	tg: number;
-	/** Time to first token, ms. */
+	/** Time to first token (pure prefill), ms. */
 	ttftMs: number;
-	/** Streamed text chunks observed (≈ generated tokens). */
+	/** Streamed text chunks observed in the tg run (≈ generated tokens). */
 	tokens: number;
 }
 
@@ -79,52 +85,51 @@ export async function runBench(
 
 	const iterations: BenchIteration[] = [];
 	for (let i = 1; i <= params.iters; i++) {
-		// Fresh conversation each iteration: clean KV cache + counters.
-		await resetConversation();
-
-		let first = 0;
+		// Two marginal runs (see the module doc): 1 token, then `tg` tokens,
+		// each from a fresh conversation (clean KV cache + counters).
 		let tokens = 0;
-		const t0 = performance.now();
+
+		await resetConversation();
+		const tA0 = performance.now();
+		await generate(params.prompt, { onText: () => {}, onEnd: () => {} }, { maxOutputTokens: 1 });
+		const tA = performance.now() - tA0;
+
+		await resetConversation();
+		const tB0 = performance.now();
 		await generate(
 			params.prompt,
 			{
 				onText: () => {
 					tokens++;
-					if (!first) first = performance.now();
 				},
 				onEnd: () => {}
 			},
 			{ maxOutputTokens: params.tg }
 		);
-		const tEnd = performance.now();
-		const bench = await getBenchmark();
-		if (!first) throw new Error('The model produced no tokens.');
+		const tB = performance.now() - tB0;
+		if (tokens === 0) throw new Error('The model produced no tokens.');
 
-		// Wall-clock measurements. Streaming chunks are not 1:1 with tokens
-		// (the engine batches them), so speed is computed from the *requested*
-		// generation length over the wall time, not from the chunk count.
-		const genMs = tEnd - first;
-		const wallTg = genMs > 0 ? params.tg / (genMs / 1000) : 0;
+		const bench = await getBenchmark();
+
+		// Marginal decode step (ms/token) and pure prefill time (ms).
+		const perTokenMs = Math.max(0.001, (tB - tA) / (params.tg - 1));
+		const prefillMs = Math.max(0.001, tA - perTokenMs);
+		const wallTg = 1000 / perTokenMs;
 
 		// Prompt length in tokens: the context after the generation minus the
 		// generated tokens. When the engine does not expose the count, estimate
-		// from the character count (~4 chars/token for Gemma on English) —
-		// better a labelled-ish estimate than no number at all.
-		let wallPp: number | null = null;
-		const ttftMs = first - t0;
-		if (ttftMs > 0) {
-			const promptTokens =
-				bench?.tokensInContext != null
-					? Math.max(1, bench.tokensInContext - params.tg)
-					: Math.max(1, Math.round(params.prompt.length / 4));
-			wallPp = promptTokens / (ttftMs / 1000);
-		}
+		// from the character count (~4 chars/token for Gemma on English).
+		const promptTokens =
+			bench?.tokensInContext != null
+				? Math.max(1, bench.tokensInContext - params.tg)
+				: Math.max(1, Math.round(params.prompt.length / 4));
+		const wallPp = promptTokens / (prefillMs / 1000);
 
 		const iteration: BenchIteration = {
 			index: i,
 			pp: bench?.prefillTokensPerSecond ?? wallPp,
 			tg: bench?.decodeTokensPerSecond ?? wallTg,
-			ttftMs: Math.round(first - t0),
+			ttftMs: Math.round(prefillMs),
 			tokens
 		};
 		iterations.push(iteration);
