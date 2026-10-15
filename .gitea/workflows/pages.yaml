@@ -1,0 +1,75 @@
+name: Build & deploy Pages
+
+# Builds whatever branch was pushed (except gh-pages itself) and
+# force-deploys the static build/ output to gh-pages. The pages server
+# (docker-compose `llm-bench-pages`, :3004) polls this branch and serves
+# it. The injected banner records the source branch + commit.
+
+on:
+  push:
+    branches:
+      - '**'
+    branches-ignore:
+      - gh-pages
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Build static site
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          test -d build || { echo "::error::no build/ output"; exit 1; }
+
+      - name: Inject source banner
+        run: |
+          set -euo pipefail
+          BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+          SRC="$(git rev-parse --short HEAD)"
+          cat > /tmp/inject-banner.mjs <<'EOF'
+          import fs from 'node:fs';
+          const branch = process.env.BRANCH;
+          const src = process.env.SRC;
+          const path = 'build/index.html';
+          const html = fs.readFileSync(path, 'utf8');
+          const marker = '<body>';
+          if (!html.includes(marker)) {
+            console.error('banner marker not found in build/index.html');
+            process.exit(1);
+          }
+          const banner =
+            '\t<div style="position:fixed;top:0;left:0;right:0;z-index:99999;padding:4px 8px;text-align:center;background:rgba(27,27,47,.55);color:#fff;font:12px/1.4 system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.35)">' +
+            'llm-bench pages build: branch <b>' + branch + '</b> @ <code>' + src +
+            '</code> &middot; served from <code>gh-pages</code></div>';
+          fs.writeFileSync(path, html.replace(marker, marker + '\n' + banner, 1));
+          console.log('banner injected: ' + branch + '@' + src);
+          EOF
+          BRANCH="$BRANCH" SRC="$SRC" node /tmp/inject-banner.mjs
+
+      - name: Deploy to gh-pages
+        run: |
+          set -euo pipefail
+          git config user.name "pages-deploy"
+          git config user.email "pages@localhost"
+          SRC=$(git rev-parse --short HEAD)   # before switching to the orphan branch
+
+          # orphan branch holding exactly the build output
+          git checkout --orphan gh-pages-deploy
+          git rm -rf . >/dev/null 2>&1 || true
+          # wipe whatever git rm left behind (node_modules, .gitignore, ...)
+          mv build /tmp/pages-build
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/pages-build/. .
+          git add -A
+          git commit -m "pages: deploy from ${SRC}"
+          git push -f origin gh-pages-deploy:gh-pages

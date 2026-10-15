@@ -129,6 +129,7 @@
 		{/if}
 
 		{#if iterations.length > 0}
+			<div class="tablewrap">
 			<table>
 				<thead>
 					<tr>
@@ -153,6 +154,7 @@
 					{/each}
 				</tbody>
 			</table>
+			</div>
 		{/if}
 
 		{#if result}
@@ -193,6 +195,8 @@
 		margin: 2rem auto;
 		padding: 0 1rem;
 	}
+	/* the 9-column iteration table scrolls horizontally on narrow screens */
+	.tablewrap { overflow-x: auto; }
 	h1 { font-size: 1.4rem; margin-bottom: 0; }
 	.sub { color: #555; margin-top: 0.25rem; }
 	.hint { color: #777; font-size: 0.9rem; }
@@ -225,4 +229,18 @@
 		word-break: break-all;
 	}
 	footer { margin-top: 2rem; border-top: 1px solid #ddd; padding-top: 0.75rem; }
+
+	/* ── mobile ─────────────────────────────────────────────── */
+	@media (max-width: 640px) {
+		main { margin: 0.75rem auto; padding: 0 0.75rem; }
+		h1 { font-size: 1.2rem; }
+		h2 { font-size: 1rem; margin-top: 1.25rem; }
+		select, button { font-size: 1rem; }
+		button { min-height: 44px; } /* comfortable tap target */
+		button.primary { width: 100%; padding: 0.65rem 1rem; }
+		table { font-size: 0.85rem; }
+		td, th { padding: 0.3rem 0.5rem; }
+		pre { font-size: 0.78rem; padding: 0.6rem; }
+		.hint { font-size: 0.85rem; }
+	}
 </style>
