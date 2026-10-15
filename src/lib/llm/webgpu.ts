@@ -17,3 +17,20 @@ export function hasWebGpu(nav: Navigator = globalThis.navigator): boolean {
 export function detectBackend(nav: Navigator = globalThis.navigator): LlmBackend {
 	return hasWebGpu(nav) ? 'webgpu' : 'wasm';
 }
+
+/**
+ * Real capability check: actually request a WebGPU adapter (not just the
+ * presence of `navigator.gpu`). Resolves `true` only when a device is
+ * obtainable — `false` when the API is missing (e.g. a non-secure context:
+ * plain `http://` origins), no adapter exists, or the request fails.
+ * Fast (hundreds of ms) — run it BEFORE downloading a multi-GB model.
+ */
+export async function webGpuAvailable(nav: Navigator = globalThis.navigator): Promise<boolean> {
+	const gpu = (nav as unknown as { gpu?: { requestAdapter?: () => Promise<unknown> } })?.gpu;
+	if (!gpu?.requestAdapter) return false;
+	try {
+		return (await gpu.requestAdapter()) != null;
+	} catch {
+		return false;
+	}
+}

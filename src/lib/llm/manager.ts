@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { defaultModelId, getModel } from './models';
-import { detectBackend } from './webgpu';
+import { detectBackend, webGpuAvailable } from './webgpu';
 import { downloadModel } from './model-cache';
 import { createWebLlmRuntime, type LlmRuntime } from './runtime';
 import { checkNetworkAccess, NO_NETWORK_MESSAGE } from './network';
@@ -114,6 +114,21 @@ async function loadModel(model: LlmModel): Promise<void> {
 
 	try {
 		if (!isCurrent()) return;
+
+		// WebGPU capability BEFORE the download: this is a WebGPU benchmark,
+		// and a multi-GB download that lands on the WASM/CPU fallback is
+		// wasted bandwidth. Failing here also catches non-secure contexts
+		// (plain http://), where navigator.gpu is undefined.
+		if (!(await webGpuAvailable())) {
+			setStatus({
+				state: 'error',
+				message:
+					'WebGPU is not available in this browser (no adapter, or a non-secure '
+					+ 'context — use https://). Nothing was downloaded. '
+					+ 'Open the app over https on a device with a GPU.'
+			});
+			return;
+		}
 
 		// Downloading a model needs network access — check up front so a
 		// missing connection surfaces a clear, actionable message.
