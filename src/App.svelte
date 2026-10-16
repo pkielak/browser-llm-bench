@@ -105,6 +105,9 @@
 				<li class={probe.apiPresent ? 'ok' : 'err'}>{probe.apiPresent ? '✓' : '✗'} WebGPU API (<code>navigator.gpu</code>)</li>
 				<li class={probe.adapter ? 'ok' : 'err'}>{probe.adapter ? '✓' : '✗'} GPU adapter</li>
 				<li class={probe.device ? 'ok' : 'err'}>{probe.device ? '✓' : '✗'} GPU device</li>
+				<li class={probe.compute ? 'ok' : 'err'}>
+					{probe.compute ? '✓' : '✗'} Compute verification (test shader){probe.computeDetail ? ` — ${probe.computeDetail}` : ''}
+				</li>
 			</ul>
 			{#if probe.description}
 				<p class="hint">Adapter: {probe.description}{probe.vendor ? ` · vendor ${probe.vendor}` : ''}</p>
@@ -148,13 +151,14 @@
 				<li>Younger than WebGL — support depends on browser <i>and</i> version</li>
 				<li>Requires a <b>secure context</b> (https:// or localhost) — over plain http, <code>navigator.gpu</code> is undefined</li>
 				<li>Adapter quality varies: VMs, remote desktops, and some drivers expose no adapter (or a slow software one)</li>
+				<li>Worst case: the adapter <i>and</i> device exist but <b>compute is broken</b> — the classic Android-with-“unsafe-WebGPU”-flag failure, where the model loads and then produces zero tokens. The probe above catches this with a test shader <i>before</i> the download</li>
 				<li>Per-device feature/limit differences (buffer sizes, f16 support) affect what the engine can do</li>
 				<li>GPU code is much harder to debug than CPU code</li>
 				<li>The WASM/CPU fallback works, but this benchmark deliberately refuses to run on it — the numbers would mislead</li>
 			</ul>
 			<h3>Browser support (2025)</h3>
 			<ul>
-				<li><b>Chrome / Edge</b> — Windows, macOS, Linux since Chrome 113 (2023); Android rolled out later</li>
+				<li><b>Chrome / Edge</b> — Windows, macOS, Linux since Chrome 113 (2023). On <b>Android</b> it often requires the “Enable unsafe WebGPU” flag, and quality depends on the GPU driver (Mali / Adreno) — the compute test above tells you if yours works</li>
 				<li><b>Firefox</b> — 141+ (Windows first, late 2024)</li>
 				<li><b>Safari</b> — 26+ (macOS / iOS, 2025)</li>
 			</ul>

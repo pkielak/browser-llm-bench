@@ -127,7 +127,15 @@ export async function runBench(
 			{ maxOutputTokens: params.tg }
 		);
 		const tB = performance.now() - tB0;
-		if (tokens === 0) throw new Error('The model produced no tokens.');
+		if (tokens === 0) {
+			throw new Error(
+				'The model produced no tokens — the engine ran, but the GPU compute pass '
+				+ 'returned nothing. This usually means WebGPU is broken on this device '
+				+ '(e.g. Android with flag-forced “unsafe WebGPU”, or a Mali/Adreno Vulkan '
+				+ 'driver). Check the compatibility section above (compute verification), '
+				+ 'chrome://gpu, or try desktop Chrome.'
+			);
+		}
 
 		const bench = await getBenchmark();
 

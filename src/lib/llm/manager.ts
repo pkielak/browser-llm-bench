@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { defaultModelId, getModel } from './models';
-import { detectBackend, webGpuAvailable } from './webgpu';
+import { detectBackend } from './webgpu';
+import { probeWebGpu, summarizeProbe } from './webgpu-probe';
 import { downloadModel } from './model-cache';
 import { createWebLlmRuntime, type LlmRuntime } from './runtime';
 import { checkNetworkAccess, NO_NETWORK_MESSAGE } from './network';
@@ -115,18 +116,19 @@ async function loadModel(model: LlmModel): Promise<void> {
 	try {
 		if (!isCurrent()) return;
 
-		// WebGPU capability BEFORE the download: this is a WebGPU benchmark,
-		// and a multi-GB download that lands on the WASM/CPU fallback is
-		// wasted bandwidth. Failing here also catches non-secure contexts
-		// (plain http://), where navigator.gpu is undefined.
-		if (!(await webGpuAvailable())) {
+		// Full WebGPU capability check BEFORE the download: secure context →
+		// API → adapter → device → a minimal compute shader. The last one is
+		// decisive — adapters can exist (even with device creation) while
+		// compute is broken (flag-forced Android WebGPU, weak Vulkan
+		// drivers), in which case the engine loads and then produces zero
+		// tokens. This is a WebGPU benchmark: a multi-GB download that lands
+		// on a broken/CPU path is wasted bandwidth, so fail fast.
+		const probe = await probeWebGpu();
+		if (probe.verdict !== 'ok') {
 			setStatus({
 				state: 'error',
-				message:
-					'WebGPU is not available in this browser (no adapter, or a non-secure '
-					+ 'context — use https://). Nothing was downloaded. '
-					+ 'Open the app over https on a device with a GPU.'
-			});
+				message: summarizeProbe(probe) + ' Nothing was downloaded.'
+		});
 			return;
 		}
 
