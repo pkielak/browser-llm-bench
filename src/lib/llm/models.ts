@@ -37,11 +37,11 @@ export const MODELS: LlmModel[] = [
 		sizeBytes: 613_722_264
 	},
 	{
-		id: 'gemma-3-270m',
-		name: 'Gemma 3 270M (tiny)',
-		description: 'Tiny — verifies the pipeline and gives quick CPU numbers. ~0.3 GB.',
-		url: 'https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm',
-		sizeBytes: 304_005_120
+		id: 'smollm2-135m',
+		name: 'SmolLM2 135M (tiny)',
+		description: 'Tiny — verifies the pipeline and gives quick CPU numbers. ~0.14 GB.',
+		url: 'https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/main/SmolLM2_135M_Instruct.litertlm',
+		sizeBytes: 142_819_328
 	},
 ];
 
