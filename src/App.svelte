@@ -267,6 +267,16 @@
 		{/if}
 
 		{#if result}
+			{#if result.stopped}
+				<div class="warn">
+					<b>Stopped early:</b> {result.stopped} — showing
+					{result.iterations.length} of {result.params.iters} iterations; the
+					aggregates use the completed runs.
+					{#if result.engine_log && result.engine_log.length > 0}
+						<pre>{result.engine_log.join('\n')}</pre>
+					{/if}
+				</div>
+			{/if}
 			<table class="summary">
 				<thead>
 					<tr><th></th><th>best</th><th>median</th></tr>
@@ -309,6 +319,19 @@
 	h1 { font-size: 1.4rem; margin-bottom: 0; }
 	.sub { color: #555; margin-top: 0.25rem; }
 	.hint { color: #777; font-size: 0.9rem; }
+	.warn {
+		border-left: 4px solid #c0392b;
+		background: #fdecea;
+		padding: 0.5rem 0.75rem;
+		margin: 0.75rem 0;
+		font-size: 0.9rem;
+	}
+	.warn pre {
+		font-size: 0.78rem;
+		overflow-x: auto;
+		white-space: pre-wrap;
+		margin: 0.5rem 0 0;
+	}
 	h2 { font-size: 1.1rem; margin-top: 1.5rem; }
 	h3 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
 	.row { display: flex; gap: 0.5rem; }

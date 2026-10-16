@@ -79,6 +79,12 @@ export interface BenchResult {
 	tg: { best: number; median: number };
 	ttft_ms: number;
 	date: string;
+	/** Set when the bench stopped before `iters` (e.g. the engine exhausted
+	 *  the WASM heap on a later iteration). The completed iterations are
+	 *  still valid and are what the aggregates are computed from. */
+	stopped?: string;
+	/** The engine's console output at the moment of stopping. */
+	engine_log?: string[];
 }
 
 function median(values: number[]): number | null {
@@ -111,7 +117,10 @@ export async function runBench(
 		: params.prompt;
 
 	const iterations: BenchIteration[] = [];
+	let stopped: string | undefined;
 	for (let i = 1; i <= params.iters; i++) {
+		try {
+		{
 		// Two marginal runs (see the module doc): a short run, then `tg`
 		// tokens, each from a fresh conversation (clean KV cache + counters).
 		// The short run asks for 1 token; some engine/model combos treat a
@@ -201,8 +210,17 @@ export async function runBench(
 			tg_engine: positive(bench?.decodeTokensPerSecond),
 			tokens_in_context: positive(bench?.tokensInContext)
 		};
-		iterations.push(iteration);
-		onIteration?.(iteration);
+			iterations.push(iteration);
+			onIteration?.(iteration);
+		}
+		} catch (err) {
+			// A later iteration failing (typically the engine exhausting the
+			// WASM heap — per-conversation memory is not released on reset)
+			// does not invalidate the completed iterations: report them.
+			if (iterations.length === 0) throw err;
+			stopped = `${err instanceof Error ? err.message : String(err)} — iteration ${i} of ${params.iters}`;
+			break;
+		}
 	}
 
 	return {
@@ -213,6 +231,9 @@ export async function runBench(
 		pp: { best: Math.max(...iterations.map((it) => it.pp)), median: median(iterations.map((it) => it.pp)) ?? 0 },
 		tg: { best: Math.max(...iterations.map((it) => it.tg)), median: median(iterations.map((it) => it.tg)) ?? 0 },
 		ttft_ms: Math.round(median(iterations.map((it) => it.ttftMs)) ?? 0),
-		date: new Date().toISOString()
+		date: new Date().toISOString(),
+		...(stopped
+			? { stopped, engine_log: getEngineLog().slice(-6) }
+			: {})
 	};
 }
