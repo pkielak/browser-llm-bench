@@ -10,6 +10,16 @@ progress into the browser's Cache Storage, WebGPU/WASM auto-detection, and
 the LiteRT engine running in a Web Worker. On top of that sits a thin
 benchmark harness (`src/lib/bench.ts`).
 
+## WebGPU compatibility section
+
+On load the app runs a live probe — secure context → `navigator.gpu` →
+`requestAdapter()` → `requestDevice()` → feature/limit report — and shows
+the result (with the adapter description and a re-check button) **before**
+any download. The same capability check gates the model download in the
+manager: no adapter → clear error, zero bytes transferred. An expandable
+"What is WebGPU" block explains the API, the pros/cons for in-browser LLM
+inference, and the current browser support matrix.
+
 ## Metrics (llama-bench convention)
 
 The engine build does not stream per token (the whole generation arrives in

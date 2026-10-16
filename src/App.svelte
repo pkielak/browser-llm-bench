@@ -3,6 +3,7 @@
 	import { llm, selectModel } from './lib/llm/manager';
 	import type { LlmState } from './lib/llm/types';
 	import { runBench, type BenchIteration, type BenchResult } from './lib/bench';
+	import { probeWebGpu, summarizeProbe, type WebGpuProbeResult } from './lib/llm/webgpu-probe';
 
 	// llama-bench convention: fixed prompt for prefill, fixed 128-token
 	// generation, 3 iterations.
@@ -68,6 +69,21 @@
 
 	const fmt = (v: number | null | undefined): string =>
 		v == null ? '—' : String(Math.round(v * 10) / 10);
+
+	// Live WebGPU compatibility probe — runs on load (a few hundred ms),
+	// well before any download, and gates + educates.
+	let probe = $state<WebGpuProbeResult | null>(null);
+	let probing = $state(true);
+	async function recheck() {
+		probing = true;
+		probe = null;
+		probe = await probeWebGpu();
+		probing = false;
+	}
+	// No reactive reads inside → runs exactly once on mount.
+	$effect(() => {
+		void recheck();
+	});
 </script>
 
 <main>
@@ -77,6 +93,73 @@
 		<strong>{modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}</strong>
 		<span class="hint">(auto-detected — WebGPU when available, WASM fallback)</span>
 	</p>
+
+	<section>
+		<h2>WebGPU compatibility</h2>
+		{#if probing || !probe}
+			<p class="hint">Checking this browser…</p>
+		{:else}
+			<p class={probe.verdict === 'ok' ? 'ok' : 'err'}>{summarizeProbe(probe)}</p>
+			<ul class="checks">
+				<li class={probe.secure ? 'ok' : 'err'}>{probe.secure ? '✓' : '✗'} Secure context (https:// or localhost)</li>
+				<li class={probe.apiPresent ? 'ok' : 'err'}>{probe.apiPresent ? '✓' : '✗'} WebGPU API (<code>navigator.gpu</code>)</li>
+				<li class={probe.adapter ? 'ok' : 'err'}>{probe.adapter ? '✓' : '✗'} GPU adapter</li>
+				<li class={probe.device ? 'ok' : 'err'}>{probe.device ? '✓' : '✗'} GPU device</li>
+			</ul>
+			{#if probe.description}
+				<p class="hint">Adapter: {probe.description}{probe.vendor ? ` · vendor ${probe.vendor}` : ''}</p>
+			{/if}
+			{#if probe.maxBufferSize}
+				<p class="hint">Max GPU buffer: {formatBytes(probe.maxBufferSize)}</p>
+			{/if}
+			{#if probe.features.length > 0}
+				<p class="hint">
+					Features: {probe.features.map((f) => `${f.name} ${f.supported ? '✓' : '✗'}`).join(' · ')}
+			</p>
+			{/if}
+			<button onclick={recheck}>Re-check</button>
+		{/if}
+
+		<details>
+			<summary>What is WebGPU — and why does this benchmark need it?</summary>
+			<p>
+				<b>WebGPU</b> is the modern browser API for graphics and <b>compute</b> —
+				the successor to WebGL, with a low-overhead interface to the
+				platform's native backend (Vulkan on Windows/Linux/Android, Metal on
+				macOS/iOS, D3D12 on Windows).
+			</p>
+			<p>
+				<b>Why it matters for LLMs in the browser:</b> inference is almost
+				entirely matrix multiplications and attention — exactly the kind of
+				massively parallel work compute shaders run on the GPU. The
+				LiteRT-LM engine compiles the model's kernels to WebGPU compute, so
+				prefill and token generation run on your graphics hardware instead of
+				a single CPU thread (WASM). The model and all data stay on the device —
+				no server round-trips.
+			</p>
+			<h3>Pros</h3>
+			<ul>
+				<li>GPU parallelism → dramatically faster prefill/generation than CPU/WASM</li>
+				<li>One portable API over Vulkan/Metal/D3D12 — no per-GPU driver code in the page</li>
+				<li>Fully local: private, offline-capable, no per-token cost</li>
+			</ul>
+			<h3>Cons / caveats</h3>
+			<ul>
+				<li>Younger than WebGL — support depends on browser <i>and</i> version</li>
+				<li>Requires a <b>secure context</b> (https:// or localhost) — over plain http, <code>navigator.gpu</code> is undefined</li>
+				<li>Adapter quality varies: VMs, remote desktops, and some drivers expose no adapter (or a slow software one)</li>
+				<li>Per-device feature/limit differences (buffer sizes, f16 support) affect what the engine can do</li>
+				<li>GPU code is much harder to debug than CPU code</li>
+				<li>The WASM/CPU fallback works, but this benchmark deliberately refuses to run on it — the numbers would mislead</li>
+			</ul>
+			<h3>Browser support (2025)</h3>
+			<ul>
+				<li><b>Chrome / Edge</b> — Windows, macOS, Linux since Chrome 113 (2023); Android rolled out later</li>
+				<li><b>Firefox</b> — 141+ (Windows first, late 2024)</li>
+				<li><b>Safari</b> — 26+ (macOS / iOS, 2025)</li>
+			</ul>
+		</details>
+	</section>
 
 	<section>
 		<h2>Model</h2>
@@ -218,6 +301,10 @@
 	.ok { color: #0a0; font-weight: bold; }
 	.err { color: #a00; }
 	progress { width: 100%; margin-top: 0.4rem; }
+	.checks { list-style: none; padding-left: 0.25rem; }
+	details { margin: 0.75rem 0; }
+	details summary { cursor: pointer; font-weight: 600; }
+	details p, details li { max-width: 65ch; }
 	table { border-collapse: collapse; margin: 0.75rem 0; }
 	td, th { border: 1px solid #ccc; padding: 0.35rem 0.7rem; text-align: right; }
 	td:first-child, th:first-child { text-align: left; }
