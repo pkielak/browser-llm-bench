@@ -38,14 +38,6 @@ export const MODELS: LlmModel[] = [
 		promptTemplate: '<|begin_of_text|><|user|>\n{prompt}\n<|assistant|>\n'
 	},
 	{
-		id: 'qwen3-0.6b',
-		name: 'Qwen3 0.6B (small)',
-		description: 'Small — the right size for the WASM/CPU path (~2 GB RAM). ~0.6 GB.',
-		url: 'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm',
-		sizeBytes: 613_722_264,
-		promptTemplate: 'user\n{prompt}</tool_call>\n</tool_call>\n'
-	},
-	{
 		id: 'smollm2-135m',
 		name: 'SmolLM2 135M (tiny)',
 		description: 'Tiny — verifies the pipeline and gives quick CPU numbers. ~0.14 GB.',

@@ -11,6 +11,11 @@
 	const TG = 128;
 	const ITERS = 3;
 
+	// The CPU (WASM) path needs ~3× the file size in RAM (and the 32-bit
+	// WASM heap is capped at 4 GB) — bigger models OOM on phones, so they
+	// are greyed out while the CPU fallback is enabled.
+	const WASM_SAFE_MAX_BYTES = 512 * 1024 * 1024;
+
 	// Mirror the store into a reactive local so the component updates.
 	let modelState: LlmState = $state({ modelId: null, activeModel: null, backend: 'wasm', status: { state: 'idle' } });
 	$effect(() => llm.subscribe((v) => (modelState = v)));
@@ -131,8 +136,14 @@
 				onchange={(e) => {
 					allowCpu = e.currentTarget.checked;
 					setAllowCpuFallback(allowCpu);
-					// Probe failed and CPU is now allowed → retry immediately.
-					if (allowCpu && modelState.status.state === 'error' && model) pick(model.id);
+					if (allowCpu) {
+						// The CPU path needs ~3× the file size in RAM — the big
+						// models OOM, so switch to the largest safe one.
+						const safe = MODELS.filter((m) => m.sizeBytes <= WASM_SAFE_MAX_BYTES);
+						if (model && model.sizeBytes > WASM_SAFE_MAX_BYTES && safe.length > 0) {
+							pick(safe.sort((a, b) => b.sizeBytes - a.sizeBytes)[0].id);
+						} else if (modelState.status.state === 'error' && model) pick(model.id);
+					}
 				}}
 			/>
 			<span>
@@ -188,7 +199,10 @@
 		<div class="row">
 			<select class="grow" value={model?.id ?? ''} onchange={(e) => pick(e.currentTarget.value)}>
 				{#each MODELS as m}
-					<option value={m.id}>{m.name} — {formatBytes(m.sizeBytes)}</option>
+					<option
+						value={m.id}
+						disabled={allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES}
+					>{m.name} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
 				{/each}
 			</select>
 		</div>
