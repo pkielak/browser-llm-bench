@@ -419,10 +419,10 @@
 					</div>
 				</div>
 
-				<Accordion
-					title="Result JSON"
-					actions={() => <button class="copy" onclick={copyJson}>{copied ? 'Copied ✓' : 'Copy'}</button>}
-				>
+				<Accordion title="Result JSON">
+					<div class="json-head">
+						<button class="copy" onclick={copyJson}>{copied ? 'Copied ✓' : 'Copy'}</button>
+					</div>
 					<pre>{JSON.stringify(result, null, 2)}</pre>
 				</Accordion>
 			</div>
@@ -698,6 +698,7 @@
 	.stat .label { font-size: 0.78rem; font-weight: 600; margin-top: 0.15rem; }
 	.stat .sub2 { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; }
 	button.copy { font-size: 0.82rem; padding: 0.25rem 0.7rem; }
+	.json-head { display: flex; justify-content: flex-end; margin-bottom: 0.5rem; }
 	pre {
 		background: var(--code-bg);
 		border: 1px solid var(--border);

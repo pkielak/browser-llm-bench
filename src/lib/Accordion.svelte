@@ -4,11 +4,7 @@
 	 * content open in modern Chrome, which janks on long content blocks;
 	 * this one toggles a plain {#if} — instant, no reflow animation.
 	 */
-	let { title, actions, children }: {
-		title: string;
-		actions?: () => any;
-		children: () => any;
-	} = $props();
+	let { title, children }: { title: string; children: () => any } = $props();
 	let open = $state(false);
 </script>
 
@@ -22,7 +18,6 @@
 			{title}
 			<span class="chev">{open ? '−' : '+'}</span>
 		</button>
-		{@render actions?.()}
 	</div>
 	{#if open}
 		<div class="acc-body">{@render children()}</div>
