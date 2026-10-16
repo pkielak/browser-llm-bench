@@ -137,7 +137,7 @@
 			/>
 			<span>
 				Allow WASM/CPU fallback — run on the CPU when WebGPU is unavailable
-				<span class="hint">(much slower; results are labeled <code>backend: “wasm”</code> — useful to see the WebGPU speedup)</span>
+				<span class="hint">(much slower; results are labeled <code>backend: “wasm”</code> — useful to see the WebGPU speedup. The CPU path needs ~3× the model file size in RAM — a 2 GB model will OOM-kill a phone tab; pick a small model)</span>
 			</span>
 		</label>
 
@@ -227,7 +227,7 @@
 		</button>
 
 		{#if modelState.backend === 'wasm' && modelState.status.state === 'ready'}
-			<p class="err">⚠ Running on WASM/CPU — the numbers below are CPU performance, not WebGPU.</p>
+			<p class="err">⚠ Running on WASM/CPU — the numbers below are CPU performance, not WebGPU. (If the tab crashes on load, that is an out-of-memory kill — use a smaller model.)</p>
 		{/if}
 
 		{#if benching && iterations.length > 0}

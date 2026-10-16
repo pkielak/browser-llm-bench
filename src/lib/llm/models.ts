@@ -26,6 +26,23 @@ export const MODELS: LlmModel[] = [
 		url: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm',
 		sizeBytes: 2_969_059_328
 	},
+	// ── small models: the WASM/CPU path needs roughly 3× the file size in
+	// RAM (blob + WASM weight heap + KV cache), so a 2 GB model OOM-kills a
+	// phone tab. These are the sizes where the CPU path actually works. ──
+	{
+		id: 'qwen3-0.6b',
+		name: 'Qwen3 0.6B (small)',
+		description: 'Small — the right size for the WASM/CPU path (~2 GB RAM). ~0.6 GB.',
+		url: 'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm',
+		sizeBytes: 613_722_264
+	},
+	{
+		id: 'gemma-3-270m',
+		name: 'Gemma 3 270M (tiny)',
+		description: 'Tiny — verifies the pipeline and gives quick CPU numbers. ~0.3 GB.',
+		url: 'https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm',
+		sizeBytes: 304_005_120
+	},
 ];
 
 /** Look up a model by id, or `undefined` if it is not in the catalogue. */

@@ -28,6 +28,12 @@ unavailable/broken, the same model runs on the WASM/CPU engine and the
 result JSON is labeled `backend: "wasm"` — the WebGPU-vs-CPU comparison is
 the most persuasive "is WebGPU worth it" number.
 
+**CPU path memory**: the WASM engine holds the model blob, a WASM weight
+heap, and the KV cache — roughly 3× the file size in RAM. A 2 GB model
+OOM-kills a phone tab (the 32-bit WASM heap is capped at 4 GB), so the
+catalogue includes small models (Qwen3 0.6B, Gemma 3 270M) that are the
+right size for CPU runs.
+
 ## Metrics (llama-bench convention)
 
 The engine build does not stream per token (the whole generation arrives in
