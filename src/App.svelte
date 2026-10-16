@@ -285,7 +285,7 @@
 
 	<footer>
 		<p class="hint">
-			<b>bench v3 — marginal timing</b> (tg from t₁₂₈ − t₁; wall-clock is
+			<b>bench v4 — marginal timing + chat templates</b> (tg from t₁₂₈ − t₁; wall-clock is
 			preferred, the engine's own counters are shown as reference — "eng"
 			columns). If you do not see the eng columns you are running a stale
 			build — rebuild and hard-refresh. Models download once and are kept in

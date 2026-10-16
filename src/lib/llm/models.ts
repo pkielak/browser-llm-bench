@@ -30,6 +30,14 @@ export const MODELS: LlmModel[] = [
 	// RAM (blob + WASM weight heap + KV cache), so a 2 GB model OOM-kills a
 	// phone tab. These are the sizes where the CPU path actually works. ──
 	{
+		id: 'smollm2-360m',
+		name: 'SmolLM2 360M (small)',
+		description: 'Small — the bisection point between the 135M that works on CPU and the 0.6B that does not. ~0.37 GB.',
+		url: 'https://huggingface.co/litert-community/SmolLM2-360M-Instruct/resolve/main/SmolLM2_360M_instruct.litertlm',
+		sizeBytes: 373_719_040,
+		promptTemplate: '<|begin_of_text|><|user|>\n{prompt}\n<|assistant|>\n'
+	},
+	{
 		id: 'qwen3-0.6b',
 		name: 'Qwen3 0.6B (small)',
 		description: 'Small — the right size for the WASM/CPU path (~2 GB RAM). ~0.6 GB.',
