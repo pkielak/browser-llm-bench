@@ -49,6 +49,13 @@ export interface LlmModel {
 	url: string;
 	/** Exact size of the file, in bytes (shown in the picker, used for progress/validation). */
 	sizeBytes: number;
+	/**
+	 * The model's chat template, with a `{prompt}` placeholder. Instruct/chat
+	 * models (e.g. Qwen3) emit an immediate EOS — i.e. zero text tokens —
+	 * when fed a raw prompt; the engine does not apply templates itself, so
+	 * the harness must. Models that tolerate raw prompts omit this.
+	 */
+	promptTemplate?: string;
 }
 
 /**

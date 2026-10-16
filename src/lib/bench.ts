@@ -103,6 +103,13 @@ export async function runBench(
 		throw new Error('The model is not ready yet. Load it first.');
 	}
 
+	// Chat models need their chat template: a raw prompt makes instruct
+	// models (e.g. Qwen3) emit an immediate EOS → zero text tokens. The
+	// engine does not apply templates, so the harness does.
+	const prompt = model.promptTemplate
+		? model.promptTemplate.split('{prompt}').join(params.prompt)
+		: params.prompt;
+
 	const iterations: BenchIteration[] = [];
 	for (let i = 1; i <= params.iters; i++) {
 		// Two marginal runs (see the module doc): a short run, then `tg`
@@ -118,7 +125,7 @@ export async function runBench(
 		{
 			const t0 = performance.now();
 			await generate(
-				params.prompt,
+				prompt,
 				{ onText: () => { tokensA++; }, onEnd: () => {} },
 				{ maxOutputTokens: 1 }
 			);
@@ -127,7 +134,7 @@ export async function runBench(
 		if (tokensA === 0) {
 			await resetConversation();
 			const t0 = performance.now();
-			await generate(params.prompt, { onText: () => {}, onEnd: () => {} }, { maxOutputTokens: 2 });
+			await generate(prompt, { onText: () => {}, onEnd: () => {} }, { maxOutputTokens: 2 });
 			tA = performance.now() - t0;
 			capA = 2;
 		}
@@ -135,7 +142,7 @@ export async function runBench(
 		await resetConversation();
 		const tB0 = performance.now();
 		await generate(
-			params.prompt,
+			prompt,
 			{
 				onText: () => {
 					tokens++;
@@ -179,7 +186,7 @@ export async function runBench(
 		const promptTokens =
 			ctx != null && Number.isFinite(ctx) && ctx > 0
 				? Math.max(1, ctx - params.tg)
-				: Math.max(1, Math.round(params.prompt.length / 4));
+				: Math.max(1, Math.round(prompt.length / 4));
 		const wallPp = promptTokens / (prefillMs / 1000);
 
 		const iteration: BenchIteration = {
@@ -201,7 +208,7 @@ export async function runBench(
 	return {
 		backend: state.backend === 'wasm' ? 'wasm' : 'webgpu',
 		model: model.name,
-		params: { tg: params.tg, iters: params.iters, prompt_chars: params.prompt.length },
+		params: { tg: params.tg, iters: params.iters, prompt_chars: prompt.length },
 		iterations,
 		pp: { best: Math.max(...iterations.map((it) => it.pp)), median: median(iterations.map((it) => it.pp)) ?? 0 },
 		tg: { best: Math.max(...iterations.map((it) => it.tg)), median: median(iterations.map((it) => it.tg)) ?? 0 },

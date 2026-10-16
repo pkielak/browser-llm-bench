@@ -34,14 +34,16 @@ export const MODELS: LlmModel[] = [
 		name: 'Qwen3 0.6B (small)',
 		description: 'Small — the right size for the WASM/CPU path (~2 GB RAM). ~0.6 GB.',
 		url: 'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm',
-		sizeBytes: 613_722_264
+		sizeBytes: 613_722_264,
+		promptTemplate: 'user\n{prompt}</tool_call>\n</tool_call>\n'
 	},
 	{
 		id: 'smollm2-135m',
 		name: 'SmolLM2 135M (tiny)',
 		description: 'Tiny — verifies the pipeline and gives quick CPU numbers. ~0.14 GB.',
 		url: 'https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/main/SmolLM2_135M_Instruct.litertlm',
-		sizeBytes: 142_819_328
+		sizeBytes: 142_819_328,
+		promptTemplate: '<|begin_of_text|><|user|>\n{prompt}\n<|assistant|>\n'
 	},
 ];
 
