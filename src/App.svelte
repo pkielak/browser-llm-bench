@@ -5,11 +5,11 @@
 	import { runBench, type BenchIteration, type BenchResult } from './lib/bench';
 	import { probeWebGpu, summarizeProbe, type WebGpuProbeResult } from './lib/llm/webgpu-probe';
 
-	// llama-bench convention: fixed prompt for prefill, fixed 128-token
-	// generation, 3 iterations.
-	const BENCH_PROMPT = 'The quick brown fox jumps over the lazy dog. '.repeat(16);
+	// llama-bench convention: a fixed-length prompt for prefill (pp512 by
+	// default), a fixed 128-token generation, 3 iterations.
 	const TG = 128;
 	const ITERS = 3;
+	const PROMPT_PRESETS = [256, 512, 1024];
 
 	// The CPU (WASM) path needs ~3× the file size in RAM (and the 32-bit
 	// WASM heap is capped at 4 GB) — bigger models OOM on phones, so they
@@ -53,6 +53,7 @@
 
 	let allowCpu = $state(false);
 	let forceGpu = $state(false);
+	let promptTarget = $state(512);
 	let benching = $state(false);
 	let iterations: BenchIteration[] = $state([]);
 	let result: BenchResult | null = $state(null);
@@ -79,7 +80,7 @@
 		benchError = null;
 		try {
 			result = await runBench(
-				{ prompt: BENCH_PROMPT, tg: TG, iters: ITERS },
+				{ promptTokens: promptTarget, tg: TG, iters: ITERS },
 				(it) => (iterations = [...iterations, it])
 			);
 			document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -286,11 +287,18 @@
 
 	<section class="card">
 		<h2><span class="step">3</span> Benchmark</h2>
+		<div class="row">
+			<label for="promptlen">Prompt length</label>
+			<select id="promptlen" value={promptTarget} onchange={(e) => (promptTarget = Number(e.currentTarget.value))}>
+				{#each PROMPT_PRESETS as p}
+					<option value={p}>~{p} tokens (pp{p})</option>
+				{/each}
+			</select>
+		</div>
 		<p class="hint">
-			{BENCH_PROMPT.length} chars prompt · tg over {TG} tokens · {ITERS} iterations
-			· best + median — the engine does not stream per token, so tg is
-			measured as (t<sub>{TG}</sub> − t<sub>1</sub>) / ({TG} − 1) and ttft as the
-			pure-prefill part of the 1-token run
+			tg over {TG} tokens · {ITERS} iterations · best + median — the engine does not
+			stream per token, so tg is measured as (t<sub>{TG}</sub> − t<sub>1</sub>) / ({TG} − 1)
+			and ttft as the pure-prefill part of the 1-token run
 		</p>
 
 		<button
@@ -365,7 +373,7 @@
 				<div class="stats">
 					<div class="stat">
 						<div class="num">{fmt(result.pp.best)}</div>
-						<div class="label">pp · tok/s (best)</div>
+						<div class="label">pp{result.params.prompt_tokens} · tok/s (best)</div>
 						<div class="sub2">median {fmt(result.pp.median)}</div>
 					</div>
 					<div class="stat">
@@ -400,11 +408,12 @@
 
 	<footer>
 		<p class="hint">
-			<b>bench v5</b> — marginal timing (tg from t₁₂₈ − t₁), chat templates,
-			partial results on engine OOM. Wall-clock is preferred; the engine's own
-			counters are shown as reference ("eng" columns). Models download once and
-			are kept in the browser's Cache Storage. The inference engine runs in a
-			Web Worker (LiteRT-LM WASM + WebGPU, pinned <code>@litert-lm/core</code> build).
+			<b>bench v6</b> — llama-bench-style prompt lengths (pp256/pp512/pp1024),
+			marginal timing (tg from t₁₂₈ − t₁), chat templates, partial results on
+			engine OOM. Wall-clock is preferred; the engine's own counters are shown
+			as reference ("eng" columns). Models download once and are kept in the
+			browser's Cache Storage. The inference engine runs in a Web Worker
+			(LiteRT-LM WASM + WebGPU, pinned <code>@litert-lm/core</code> build).
 		</p>
 	</footer>
 </main>
@@ -564,6 +573,15 @@
 		accent-color: var(--accent);
 	}
 	progress.benchprogress { margin: 0.6rem 0 0; }
+
+	.row {
+		display: flex;
+		gap: 0.6rem;
+		align-items: center;
+		margin: 0.25rem 0 0.5rem;
+	}
+	.row label { font-weight: 600; font-size: 0.92rem; }
+	.row select { width: auto; }
 
 	/* ── status & alerts ──────────────────────────────────────── */
 	.status { margin: 0.6rem 0 0; }

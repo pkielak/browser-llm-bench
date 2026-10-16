@@ -28,12 +28,36 @@ import { generate, getBenchmark, getEngineLog, llm, resetConversation } from './
  */
 
 export interface BenchParams {
-	/** The fixed prompt for the prefill measurement. */
-	prompt: string;
+	/** Target prompt length in tokens — llama-bench's pp512 convention.
+	 *  The engine API takes text (not token IDs), so the prompt is
+	 *  synthesized to approximately this length. */
+	promptTokens: number;
 	/** How many tokens each generation produces (the tg length). */
 	tg: number;
 	/** How many iterations to run. */
 	iters: number;
+}
+
+// The prompt is a natural (non-repetitive-within-a-cycle) English passage,
+// repeated to the target length. llama-bench itself uses random vocabulary
+// tokens — exact counts, immune to model behavior; we can't inject token
+// IDs through the LiteRT text API, so ~4 chars/token is the working
+// approximation (the engine's context counter, when available, is the
+// exact count and what pp is computed from).
+const BASE_TEXT =
+	'The sun rose over the quiet harbor as the first fishing boats headed out to sea. ' +
+	'Seagulls circled above the masts, their cries carried by the morning wind along the coast. ' +
+	'Fishermen checked their nets and engines before setting off, knowing that the day\'s catch ' +
+	'would depend on weather and skill as much as luck. By midmorning the harbor was empty ' +
+	'except for a few small pleasure boats drifting lazily in the calm water, while the lighthouse ' +
+	'keeper climbed his tower to log the first entries of a new day\'s weather book.';
+
+/** Synthesize a prompt of approximately `targetTokens` tokens. */
+function buildPrompt(targetTokens: number): string {
+	const targetChars = targetTokens * 4;
+	let out = BASE_TEXT;
+	while (out.length < targetChars) out += ' ' + BASE_TEXT;
+	return out;
 }
 
 export interface BenchIteration {
@@ -67,6 +91,8 @@ function positive(v: number | null | undefined): number | null {
 export interface BenchResultParams {
 	tg: number;
 	iters: number;
+	/** Target prompt length in tokens (llama-bench-style, e.g. 512 = pp512). */
+	prompt_tokens: number;
 	prompt_chars: number;
 }
 
@@ -109,12 +135,14 @@ export async function runBench(
 		throw new Error('The model is not ready yet. Load it first.');
 	}
 
-	// Chat models need their chat template: a raw prompt makes instruct
-	// models (e.g. Qwen3) emit an immediate EOS → zero text tokens. The
-	// engine does not apply templates, so the harness does.
+	// Synthesize the prompt to the target length, then apply the chat
+	// template: a raw prompt makes instruct models (e.g. Qwen3) emit an
+	// immediate EOS → zero text tokens, and the engine does not apply
+	// templates itself.
+	const rawPrompt = buildPrompt(params.promptTokens);
 	const prompt = model.promptTemplate
-		? model.promptTemplate.split('{prompt}').join(params.prompt)
-		: params.prompt;
+		? model.promptTemplate.split('{prompt}').join(rawPrompt)
+		: rawPrompt;
 
 	const iterations: BenchIteration[] = [];
 	let stopped: string | undefined;
@@ -226,7 +254,12 @@ export async function runBench(
 	return {
 		backend: state.backend === 'wasm' ? 'wasm' : 'webgpu',
 		model: model.name,
-		params: { tg: params.tg, iters: params.iters, prompt_chars: prompt.length },
+		params: {
+			tg: params.tg,
+			iters: params.iters,
+			prompt_tokens: Math.round(prompt.length / 4),
+			prompt_chars: prompt.length
+		},
 		iterations,
 		pp: { best: Math.max(...iterations.map((it) => it.pp)), median: median(iterations.map((it) => it.pp)) ?? 0 },
 		tg: { best: Math.max(...iterations.map((it) => it.tg)), median: median(iterations.map((it) => it.tg)) ?? 0 },
