@@ -13,12 +13,20 @@ benchmark harness (`src/lib/bench.ts`).
 ## WebGPU compatibility section
 
 On load the app runs a live probe — secure context → `navigator.gpu` →
-`requestAdapter()` → `requestDevice()` → feature/limit report — and shows
-the result (with the adapter description and a re-check button) **before**
-any download. The same capability check gates the model download in the
-manager: no adapter → clear error, zero bytes transferred. An expandable
+`requestAdapter()` → `requestDevice()` → **a minimal compute shader with
+verified readback** → feature/limit report — and shows the result (adapter
+description, re-check button) **before** any download. The compute step is
+decisive: adapters can exist (even with device creation) while compute is
+broken — the classic flag-forced-Android-WebGPU failure, caught here instead
+of after a 2 GB download. The same check gates the model download in the
+manager: no working GPU → clear error, zero bytes transferred. An expandable
 "What is WebGPU" block explains the API, the pros/cons for in-browser LLM
 inference, and the current browser support matrix.
+
+A checkbox ("Allow WASM/CPU fallback") opts out of the gate: when WebGPU is
+unavailable/broken, the same model runs on the WASM/CPU engine and the
+result JSON is labeled `backend: "wasm"` — the WebGPU-vs-CPU comparison is
+the most persuasive "is WebGPU worth it" number.
 
 ## Metrics (llama-bench convention)
 

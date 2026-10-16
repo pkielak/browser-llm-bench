@@ -64,6 +64,14 @@ export const llm = writable<LlmState>({
 let runtime: LlmRuntime | null = null;
 /** Bumped on every load attempt; lets a newer load cancel an older one. */
 let loadingToken = 0;
+/** When true, a failed WebGPU probe falls back to the WASM/CPU engine
+ *  instead of refusing (explicit user opt-in — the UI checkbox). */
+let allowCpuFallback = false;
+
+/** Opt in to the WASM/CPU fallback when WebGPU is unavailable/broken. */
+export function setAllowCpuFallback(v: boolean): void {
+	allowCpuFallback = v;
+}
 
 function setState(patch: Partial<LlmState>): void {
 	llm.update((s) => ({ ...s, ...patch }));
@@ -125,11 +133,19 @@ async function loadModel(model: LlmModel): Promise<void> {
 		// on a broken/CPU path is wasted bandwidth, so fail fast.
 		const probe = await probeWebGpu();
 		if (probe.verdict !== 'ok') {
-			setStatus({
-				state: 'error',
-				message: summarizeProbe(probe) + ' Nothing was downloaded.'
-		});
-			return;
+			if (!allowCpuFallback) {
+				setStatus({
+					state: 'error',
+					message:
+						summarizeProbe(probe) +
+						' Nothing was downloaded. (Tick “Allow WASM/CPU fallback” to run on the CPU instead.)'
+			});
+				return;
+			}
+			// Explicit opt-in: proceed on the WASM/CPU engine.
+			setState({ backend: 'wasm' });
+		} else {
+			setState({ backend: 'webgpu' });
 		}
 
 		// Downloading a model needs network access — check up front so a

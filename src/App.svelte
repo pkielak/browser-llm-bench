@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { MODELS, formatBytes, getModel } from './lib/llm/models';
-	import { llm, selectModel } from './lib/llm/manager';
+	import { llm, selectModel, setAllowCpuFallback } from './lib/llm/manager';
 	import type { LlmState } from './lib/llm/types';
 	import { runBench, type BenchIteration, type BenchResult } from './lib/bench';
 	import { probeWebGpu, summarizeProbe, type WebGpuProbeResult } from './lib/llm/webgpu-probe';
@@ -29,6 +29,7 @@
 	});
 	const model = $derived(modelState.activeModel ?? getModel(modelState.modelId ?? undefined));
 
+	let allowCpu = $state(false);
 	let benching = $state(false);
 	let iterations: BenchIteration[] = $state([]);
 	let result: BenchResult | null = $state(null);
@@ -123,6 +124,23 @@
 			<button onclick={recheck}>Re-check</button>
 		{/if}
 
+		<label class="cpufallback">
+			<input
+				type="checkbox"
+				checked={allowCpu}
+				onchange={(e) => {
+					allowCpu = e.currentTarget.checked;
+					setAllowCpuFallback(allowCpu);
+					// Probe failed and CPU is now allowed → retry immediately.
+					if (allowCpu && modelState.status.state === 'error' && model) pick(model.id);
+				}}
+			/>
+			<span>
+				Allow WASM/CPU fallback — run on the CPU when WebGPU is unavailable
+				<span class="hint">(much slower; results are labeled <code>backend: “wasm”</code> — useful to see the WebGPU speedup)</span>
+			</span>
+		</label>
+
 		<details>
 			<summary>What is WebGPU — and why does this benchmark need it?</summary>
 			<p>
@@ -154,7 +172,7 @@
 				<li>Worst case: the adapter <i>and</i> device exist but <b>compute is broken</b> — the classic Android-with-“unsafe-WebGPU”-flag failure, where the model loads and then produces zero tokens. The probe above catches this with a test shader <i>before</i> the download</li>
 				<li>Per-device feature/limit differences (buffer sizes, f16 support) affect what the engine can do</li>
 				<li>GPU code is much harder to debug than CPU code</li>
-				<li>The WASM/CPU fallback works, but this benchmark deliberately refuses to run on it — the numbers would mislead</li>
+				<li>The WASM/CPU fallback works but is far slower — the benchmark refuses it <i>by default</i> (the numbers would mislead); the checkbox above enables it explicitly, and those results are labeled <code>backend: “wasm”</code></li>
 			</ul>
 			<h3>Browser support (2025)</h3>
 			<ul>
@@ -207,6 +225,10 @@
 		<button class="primary" disabled={benching || modelState.status.state !== 'ready'} onclick={bench}>
 			{benching ? 'Running…' : 'Run benchmark'}
 		</button>
+
+		{#if modelState.backend === 'wasm' && modelState.status.state === 'ready'}
+			<p class="err">⚠ Running on WASM/CPU — the numbers below are CPU performance, not WebGPU.</p>
+		{/if}
 
 		{#if benching && iterations.length > 0}
 			<p class="hint">iteration {iterations.length}/{ITERS} done…</p>
@@ -306,6 +328,14 @@
 	.err { color: #a00; }
 	progress { width: 100%; margin-top: 0.4rem; }
 	.checks { list-style: none; padding-left: 0.25rem; }
+	.cpufallback {
+		display: flex;
+		gap: 0.5rem;
+		align-items: baseline;
+		margin: 0.75rem 0;
+		cursor: pointer;
+	}
+	.cpufallback input { width: 1.1rem; height: 1.1rem; flex: none; }
 	details { margin: 0.75rem 0; }
 	details summary { cursor: pointer; font-weight: 600; }
 	details p, details li { max-width: 65ch; }
