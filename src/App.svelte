@@ -260,7 +260,7 @@
 				<option
 					value={m.id}
 					disabled={allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES}
-				>{m.name} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
+				>{m.name}{m.wasmOnly ? ' · CPU only' : ''} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
 			{/each}
 		</select>
 		{#if model}

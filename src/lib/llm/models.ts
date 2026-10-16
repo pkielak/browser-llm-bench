@@ -32,18 +32,20 @@ export const MODELS: LlmModel[] = [
 	{
 		id: 'smollm2-360m',
 		name: 'SmolLM2 360M (small)',
-		description: 'Small — the bisection point between the 135M that works on CPU and the 0.6B that does not. ~0.37 GB.',
+		description: 'Small — CPU (WASM) only: this file format does not load on the WebGPU path. ~0.37 GB.',
 		url: 'https://huggingface.co/litert-community/SmolLM2-360M-Instruct/resolve/main/SmolLM2_360M_instruct.litertlm',
 		sizeBytes: 373_719_040,
-		promptTemplate: '<|begin_of_text|><|user|>\n{prompt}\n<|assistant|>\n'
+		promptTemplate: '<|begin_of_text|><|user|>\n{prompt}\n<|assistant|>\n',
+		wasmOnly: true
 	},
 	{
 		id: 'smollm2-135m',
 		name: 'SmolLM2 135M (tiny)',
-		description: 'Tiny — verifies the pipeline and gives quick CPU numbers. ~0.14 GB.',
+		description: 'Tiny — CPU (WASM) only: this file format does not load on the WebGPU path. ~0.14 GB.',
 		url: 'https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/main/SmolLM2_135M_Instruct.litertlm',
 		sizeBytes: 142_819_328,
-		promptTemplate: '<|begin_of_text|><|user|>\n{prompt}\n<|assistant|>\n'
+		promptTemplate: '<|begin_of_text|><|user|>\n{prompt}\n<|assistant|>\n',
+		wasmOnly: true
 	},
 ];
 

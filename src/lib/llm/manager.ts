@@ -133,15 +133,23 @@ async function loadModel(model: LlmModel): Promise<void> {
 	try {
 		if (!isCurrent()) return;
 
-		// Full WebGPU capability check BEFORE the download: secure context →
+		// Backend selection, then (for WebGPU) a full capability check
+		// BEFORE the download: secure context →
 		// API → adapter → device → a minimal compute shader. The last one is
 		// decisive — adapters can exist (even with device creation) while
 		// compute is broken (flag-forced Android WebGPU, weak Vulkan
 		// drivers), in which case the engine loads and then produces zero
 		// tokens. This is a WebGPU benchmark: a multi-GB download that lands
 		// on a broken/CPU path is wasted bandwidth, so fail fast.
-		const probe = await probeWebGpu();
-		if (probe.verdict !== 'ok') {
+		if (model.wasmOnly) {
+			// Hard override: this model's file format does not load on the
+			// WebGPU path ("Streaming … is not supported yet"), even under
+			// "Force WebGPU anyway" — a known incompatibility, not a gamble.
+			// No probe needed, so it is skipped (faster start too).
+			setState({ backend: 'wasm' });
+		} else {
+			const probe = await probeWebGpu();
+			if (probe.verdict !== 'ok') {
 			if (forceWebGpu) {
 				// Explicit consent: proceed on WebGPU even though the probe
 				// reported problems (the user accepts the zero-token risk).
@@ -158,9 +166,10 @@ async function loadModel(model: LlmModel): Promise<void> {
 			} else {
 				// Explicit opt-in: proceed on the WASM/CPU engine.
 				setState({ backend: 'wasm' });
+				}
+			} else {
+				setState({ backend: 'webgpu' });
 			}
-		} else {
-			setState({ backend: 'webgpu' });
 		}
 
 		// Downloading a model needs network access — check up front so a
