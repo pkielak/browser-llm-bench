@@ -218,6 +218,11 @@ export function getBenchmark(): Promise<LlmBenchmarkInfo | null> {
 	return runtime ? runtime.benchmark() : Promise.resolve(null);
 }
 
+/** The engine's captured console output from the most recent generate(). */
+export function getEngineLog(): string[] {
+	return runtime?.getLog() ?? [];
+}
+
 /** Release the loaded model and free its memory. */
 export async function releaseModel(): Promise<void> {
 	loadingToken++;

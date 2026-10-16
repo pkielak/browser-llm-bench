@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { generate, getBenchmark, llm, resetConversation } from './llm/manager';
+import { generate, getBenchmark, getEngineLog, llm, resetConversation } from './llm/manager';
 
 /**
  * The benchmark harness — llama-bench convention on top of the borrowed
@@ -105,14 +105,32 @@ export async function runBench(
 
 	const iterations: BenchIteration[] = [];
 	for (let i = 1; i <= params.iters; i++) {
-		// Two marginal runs (see the module doc): 1 token, then `tg` tokens,
-		// each from a fresh conversation (clean KV cache + counters).
+		// Two marginal runs (see the module doc): a short run, then `tg`
+		// tokens, each from a fresh conversation (clean KV cache + counters).
+		// The short run asks for 1 token; some engine/model combos treat a
+		// cap of 1 as "generate nothing" (empty stream in a few ms), so it
+		// falls back to 2 — the marginal formula adapts to `capA`.
 		let tokens = 0;
-
+		let capA = 1;
+		let tokensA = 0;
+		let tA = 0;
 		await resetConversation();
-		const tA0 = performance.now();
-		await generate(params.prompt, { onText: () => {}, onEnd: () => {} }, { maxOutputTokens: 1 });
-		const tA = performance.now() - tA0;
+		{
+			const t0 = performance.now();
+			await generate(
+				params.prompt,
+				{ onText: () => { tokensA++; }, onEnd: () => {} },
+				{ maxOutputTokens: 1 }
+			);
+			tA = performance.now() - t0;
+		}
+		if (tokensA === 0) {
+			await resetConversation();
+			const t0 = performance.now();
+			await generate(params.prompt, { onText: () => {}, onEnd: () => {} }, { maxOutputTokens: 2 });
+			tA = performance.now() - t0;
+			capA = 2;
+		}
 
 		await resetConversation();
 		const tB0 = performance.now();
@@ -128,20 +146,29 @@ export async function runBench(
 		);
 		const tB = performance.now() - tB0;
 		if (tokens === 0) {
+			const cause =
+				state.backend === 'webgpu'
+					? 'This usually means WebGPU is broken on this device (e.g. Android '
+						+ 'with flag-forced “unsafe WebGPU”, or a Mali/Adreno Vulkan driver). '
+						+ 'Check the compatibility section (compute verification), chrome://gpu, '
+						+ 'or try desktop Chrome.'
+					: 'You are on the WASM/CPU backend, so this is NOT a WebGPU problem — the '
+						+ 'engine itself returned nothing. It can be memory pressure (the CPU '
+						+ 'path needs ~3× the file size in RAM) — try the tiny model.';
+			const log = getEngineLog().slice(-4).join(' | ');
 			throw new Error(
-				'The model produced no tokens — the engine ran, but the GPU compute pass '
-				+ 'returned nothing. This usually means WebGPU is broken on this device '
-				+ '(e.g. Android with flag-forced “unsafe WebGPU”, or a Mali/Adreno Vulkan '
-				+ 'driver). Check the compatibility section above (compute verification), '
-				+ 'chrome://gpu, or try desktop Chrome.'
+				'The model produced no tokens — the engine ran, but the generation '
+				+ `returned nothing. ${cause}` +
+				(log ? ` Engine console: ${log}` : ' Check the browser console (worker) for engine errors.')
 			);
 		}
 
 		const bench = await getBenchmark();
 
-		// Marginal decode step (ms/token) and pure prefill time (ms).
-		const perTokenMs = Math.max(0.001, (tB - tA) / (params.tg - 1));
-		const prefillMs = Math.max(0.001, tA - perTokenMs);
+		// Marginal decode step (ms/token) and pure prefill time (ms) —
+		// `capA` tokens were generated in run A (1, or 2 on the fallback).
+		const perTokenMs = Math.max(0.001, (tB - tA) / (params.tg - capA));
+		const prefillMs = Math.max(0.001, tA - capA * perTokenMs);
 		const wallTg = 1000 / perTokenMs;
 
 		// Prompt length in tokens: the context after the generation minus the

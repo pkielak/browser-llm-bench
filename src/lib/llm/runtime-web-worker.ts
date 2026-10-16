@@ -30,6 +30,34 @@
 const LITERT_VERSION = '0.18.0';
 const LITERT_MODULE_URL = `https://cdn.jsdelivr.net/npm/@litert-lm/core@${LITERT_VERSION}/+esm`;
 
+// --- Engine console capture --------------------------------------------------
+// The LiteRT engine reports failures (WASM OOM, shader compile, …) to the
+// console — on a silent zero-token generation that is often the ONLY trace.
+// Buffer the last lines and ship them with `done` so the UI can surface them.
+const engineConsole: string[] = [];
+function captureConsole(level: string, args: unknown[]): void {
+	try {
+		const line = args
+			.map((a) => (typeof a === 'string' ? a : a instanceof Error ? a.message : JSON.stringify(a)))
+			.join(' ')
+			.slice(0, 200);
+		engineConsole.push(`[${level}] ${line}`);
+		if (engineConsole.length > 12) engineConsole.shift();
+	} catch {
+		// capture must never throw
+	}
+}
+const origConsoleError = console.error;
+const origConsoleWarn = console.warn;
+console.error = (...args: unknown[]): void => {
+	captureConsole('e', args);
+	origConsoleError.apply(console, args);
+};
+console.warn = (...args: unknown[]): void => {
+	captureConsole('w', args);
+	origConsoleWarn.apply(console, args);
+};
+
 // --- Shapes of the external LiteRT-LM module (kept loose on purpose) ---
 
 interface LiteRtMessageItem {
@@ -225,7 +253,13 @@ async function handleGenerate(msg: Extract<InMessage, { kind: 'generate' }>): Pr
 	// whole generation (and hold the `busy` flag against the next `reset`).
 	// When the counters do arrive they are sent as a separate `bench`
 	// message; the bench always has its wall-clock numbers either way.
-	(self as unknown as Worker).postMessage({ kind: 'done', id: msg.id });
+	// The console capture is snapshotted + cleared: each generation reports
+	// its own lines.
+	(self as unknown as Worker).postMessage({
+		kind: 'done',
+		id: msg.id,
+		console: engineConsole.splice(0)
+	});
 
 	void (async () => {
 		const bench: BenchCounters = { prefill: null, decode: null, tokensInContext: null };

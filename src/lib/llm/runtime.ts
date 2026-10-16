@@ -76,7 +76,7 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 		| { kind: 'ready' }
 		| { kind: 'closed' }
 		| { kind: 'text'; id: number; text: string }
-		| { kind: 'done'; id: number }
+		| { kind: 'done'; id: number; console?: string[] }
 		| { kind: 'bench'; bench: BenchCounters }
 		| { kind: 'reset-done'; id: number }
 		| { kind: 'error'; id: number | null; message: string };
@@ -100,6 +100,9 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 	// detached, timeout-guarded — some builds never settle them).
 	let lastBench: BenchCounters | null = null;
 	let benchWaiters: Array<(b: BenchCounters) => void> = [];
+	// The worker's captured engine console output from the most recent
+	// generate() — the only trace of a silent zero-token generation.
+	let engineLog: string[] = [];
 	// The `generate()` currently streaming (at most one at a time).
 	let activeCallbacks: { onText: (t: string) => void } | null = null;
 
@@ -123,6 +126,7 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 				activeCallbacks?.onText(msg.text);
 				break;
 			case 'done':
+				engineLog = msg.console ?? [];
 				settle(msg.id, null);
 				break;
 			case 'bench':
@@ -215,6 +219,9 @@ export async function createWebLlmRuntime(options: CreateRuntimeOptions): Promis
 				});
 			});
 			return b ? toBenchInfo(b) : null;
+		},
+		getLog(): string[] {
+			return engineLog;
 		},
 		async close() {
 			if (closed) return;

@@ -105,6 +105,9 @@ export interface LlmRuntime {
 	reset(): Promise<void>;
 	/** The engine's speed counters from the most recent generate() (null if unavailable). */
 	benchmark(): Promise<LlmBenchmarkInfo | null>;
+	/** The engine's captured console output from the most recent generate()
+	 *  — the only trace of a silent zero-token generation. */
+	getLog(): string[];
 	/** Release the model and free its memory. */
 	close(): Promise<void>;
 }
