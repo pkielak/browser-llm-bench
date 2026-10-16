@@ -34,15 +34,34 @@
 	});
 	const model = $derived(modelState.activeModel ?? getModel(modelState.modelId ?? undefined));
 
+	// Header status pill.
+	const statusInfo = $derived.by(() => {
+		const s = modelState.status.state;
+		switch (s) {
+			case 'idle':
+				return { cls: 'idle', text: 'not loaded' };
+			case 'downloading':
+				return { cls: 'busy', text: `downloading ${Math.round(modelState.status.progress * 100)}%` };
+			case 'loading':
+				return { cls: 'busy', text: 'loading engine' };
+			case 'ready':
+				return { cls: 'ready', text: 'model ready' };
+			default:
+				return { cls: 'error', text: 'error' };
+		}
+	});
+
 	let allowCpu = $state(false);
 	let benching = $state(false);
 	let iterations: BenchIteration[] = $state([]);
 	let result: BenchResult | null = $state(null);
 	let benchError: string | null = $state(null);
+	let copied = $state(false);
 
 	const progressPct = $derived(
 		modelState.status.state === 'downloading' ? Math.round(modelState.status.progress * 100) : 0
 	);
+	const benchPct = $derived(benching ? Math.round((iterations.length / ITERS) * 100) : 0);
 
 	function pick(id: string) {
 		result = null;
@@ -62,6 +81,7 @@
 				{ prompt: BENCH_PROMPT, tg: TG, iters: ITERS },
 				(it) => (iterations = [...iterations, it])
 			);
+			document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 		} catch (err) {
 			benchError = err instanceof Error ? err.message : String(err);
 		} finally {
@@ -70,11 +90,16 @@
 	}
 
 	function copyJson() {
-		if (result) void navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+		if (!result) return;
+		void navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+		copied = true;
+		setTimeout(() => (copied = false), 1500);
 	}
 
 	const fmt = (v: number | null | undefined): string =>
 		v == null ? '—' : String(Math.round(v * 10) / 10);
+	const fmtMs = (v: number | null | undefined): string =>
+		v == null ? '—' : v.toLocaleString();
 
 	// Live WebGPU compatibility probe — runs on load (a few hundred ms),
 	// well before any download, and gates + educates.
@@ -92,20 +117,29 @@
 	});
 </script>
 
-<main>
-	<h1>llm-bench</h1>
-	<p class="sub">
-		Llama-bench-style performance benchmark · LiteRT-LM on
-		<strong>{modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}</strong>
-		<span class="hint">(auto-detected — WebGPU when available, WASM fallback)</span>
-	</p>
+<header>
+	<div>
+		<h1>llm-bench</h1>
+		<p class="sub">
+			Llama-bench-style performance benchmark · LiteRT-LM on
+			<strong>{modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}</strong>
+		</p>
+	</div>
+	<div class="pills">
+		<span class="pill backend">{modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}</span>
+		<span class="pill {statusInfo.cls}">{statusInfo.text}</span>
+	</div>
+</header>
 
-	<section>
-		<h2>WebGPU compatibility</h2>
+<main>
+	<section class="card">
+		<h2><span class="step">1</span> GPU compatibility</h2>
 		{#if probing || !probe}
 			<p class="hint">Checking this browser…</p>
 		{:else}
-			<p class={probe.verdict === 'ok' ? 'ok' : 'err'}>{summarizeProbe(probe)}</p>
+			<p class={probe.verdict === 'ok' ? 'ok' : 'err'}>
+				{probe.verdict === 'ok' ? '✓' : '✗'} {summarizeProbe(probe)}
+			</p>
 			<ul class="checks">
 				<li class={probe.secure ? 'ok' : 'err'}>{probe.secure ? '✓' : '✗'} Secure context (https:// or localhost)</li>
 				<li class={probe.apiPresent ? 'ok' : 'err'}>{probe.apiPresent ? '✓' : '✗'} WebGPU API (<code>navigator.gpu</code>)</li>
@@ -124,7 +158,7 @@
 			{#if probe.features.length > 0}
 				<p class="hint">
 					Features: {probe.features.map((f) => `${f.name} ${f.supported ? '✓' : '✗'}`).join(' · ')}
-			</p>
+				</p>
 			{/if}
 			<button onclick={recheck}>Re-check</button>
 		{/if}
@@ -147,8 +181,11 @@
 				}}
 			/>
 			<span>
-				Allow WASM/CPU fallback — run on the CPU when WebGPU is unavailable
-				<span class="hint">(much slower; results are labeled <code>backend: “wasm”</code> — useful to see the WebGPU speedup. The CPU path needs ~3× the model file size in RAM — a 2 GB model will OOM-kill a phone tab; pick a small model)</span>
+				<b>Allow WASM/CPU fallback</b> — run on the CPU when WebGPU is unavailable
+				<span class="hint"
+					>(much slower; results are labeled <code>backend: “wasm”</code>. The CPU path
+					needs ~3× the model file size in RAM — big models will OOM, so they are
+					disabled below)</span>
 			</span>
 		</label>
 
@@ -194,18 +231,16 @@
 		</details>
 	</section>
 
-	<section>
-		<h2>Model</h2>
-		<div class="row">
-			<select class="grow" value={model?.id ?? ''} onchange={(e) => pick(e.currentTarget.value)}>
-				{#each MODELS as m}
-					<option
-						value={m.id}
-						disabled={allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES}
-					>{m.name} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
-				{/each}
-			</select>
-		</div>
+	<section class="card">
+		<h2><span class="step">2</span> Model</h2>
+		<select class="grow" value={model?.id ?? ''} onchange={(e) => pick(e.currentTarget.value)}>
+			{#each MODELS as m}
+				<option
+					value={m.id}
+					disabled={allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES}
+				>{m.name} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
+			{/each}
+		</select>
 		{#if model}
 			<p class="hint">{model.description}</p>
 		{/if}
@@ -213,14 +248,14 @@
 		<div class="status">
 			{#if modelState.status.state === 'idle'}
 				<p>Model not loaded yet.</p>
-				<button onclick={() => model && pick(model.id)}>Download model</button>
+				<button class="primary" onclick={() => model && pick(model.id)}>Download model</button>
 			{:else if modelState.status.state === 'downloading'}
 				<p>Downloading model… {progressPct}%</p>
 				<progress value={progressPct} max={100}></progress>
 			{:else if modelState.status.state === 'loading'}
-				<p>Loading model into the {modelState.backend} engine…</p>
+				<p class="busy">Loading model into the {modelState.backend} engine…</p>
 			{:else if modelState.status.state === 'ready'}
-				<p class="ok">Model ready.</p>
+				<p class="ok">✓ Model ready.</p>
 			{:else}
 				<p class="err">{modelState.status.message}</p>
 				<button onclick={() => model && pick(model.id)}>Retry</button>
@@ -228,177 +263,409 @@
 		</div>
 	</section>
 
-	<section>
-		<h2>Benchmark</h2>
+	<section class="card">
+		<h2><span class="step">3</span> Benchmark</h2>
 		<p class="hint">
 			{BENCH_PROMPT.length} chars prompt · tg over {TG} tokens · {ITERS} iterations
 			· best + median — the engine does not stream per token, so tg is
 			measured as (t<sub>{TG}</sub> − t<sub>1</sub>) / ({TG} − 1) and ttft as the
 			pure-prefill part of the 1-token run
 		</p>
-		<button class="primary" disabled={benching || modelState.status.state !== 'ready'} onclick={bench}>
-			{benching ? 'Running…' : 'Run benchmark'}
+
+		<button
+			class="primary run"
+			disabled={benching || modelState.status.state !== 'ready'}
+			onclick={bench}
+		>
+			{benching ? `Running… iteration ${Math.min(iterations.length + 1, ITERS)}/${ITERS}` : 'Run benchmark'}
 		</button>
+		{#if benching && iterations.length > 0}
+			<progress class="benchprogress" value={benchPct} max={100}></progress>
+		{/if}
 
 		{#if modelState.backend === 'wasm' && modelState.status.state === 'ready'}
-			<p class="err">⚠ Running on WASM/CPU — the numbers below are CPU performance, not WebGPU. (If the tab crashes on load, that is an out-of-memory kill — use a smaller model.)</p>
-		{/if}
-
-		{#if benching && iterations.length > 0}
-			<p class="hint">iteration {iterations.length}/{ITERS} done…</p>
+			<div class="alert warn">
+				⚠ Running on <b>WASM/CPU</b> — the numbers are CPU performance, not WebGPU.
+				(If the tab crashes on load, that is an out-of-memory kill — use a smaller model.)
+			</div>
 		{/if}
 		{#if benchError}
-			<p class="err">{benchError}</p>
+			<div class="alert err">{benchError}</div>
 		{/if}
 
 		{#if iterations.length > 0}
 			<div class="tablewrap">
-			<table>
-				<thead>
-					<tr>
-						<th></th><th>pp (tok/s)</th><th>tg (tok/s)</th><th>ttft (ms)</th>
-						<th>t₁ (ms)</th><th>t₁₂₈ (ms)</th>
-						<th>pp eng</th><th>tg eng</th><th>ctx tok</th>
-					</tr>
-					</thead>
-				<tbody>
-					{#each iterations as it}
+				<table>
+					<thead>
 						<tr>
-							<td>run {it.index}</td>
-							<td>{fmt(it.pp)}</td>
-							<td>{fmt(it.tg)}</td>
-							<td>{it.ttftMs}</td>
-							<td>{it.tA_ms}</td>
-							<td>{it.tB_ms}</td>
-							<td>{fmt(it.pp_engine)}</td>
-							<td>{fmt(it.tg_engine)}</td>
-							<td>{it.tokens_in_context ?? '—'}</td>
+							<th></th><th>pp (tok/s)</th><th>tg (tok/s)</th><th>ttft (ms)</th>
+							<th>t₁ (ms)</th><th>t₁₂₈ (ms)</th>
+							<th>pp eng</th><th>tg eng</th><th>ctx tok</th>
 						</tr>
-					{/each}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						{#each iterations as it}
+							<tr>
+								<td>run {it.index}</td>
+								<td>{fmt(it.pp)}</td>
+								<td>{fmt(it.tg)}</td>
+								<td>{fmtMs(it.ttftMs)}</td>
+								<td>{fmtMs(it.tA_ms)}</td>
+								<td>{fmtMs(it.tB_ms)}</td>
+								<td>{fmt(it.pp_engine)}</td>
+								<td>{fmt(it.tg_engine)}</td>
+								<td>{it.tokens_in_context ?? '—'}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
 			</div>
 		{/if}
 
 		{#if result}
-			{#if result.stopped}
-				<div class="warn">
-					<b>Stopped early:</b> {result.stopped} — showing
-					{result.iterations.length} of {result.params.iters} iterations; the
-					aggregates use the completed runs.
-					{#if result.engine_log && result.engine_log.length > 0}
-						<pre>{result.engine_log.join('\n')}</pre>
-					{/if}
-				</div>
-			{/if}
-			<table class="summary">
-				<thead>
-					<tr><th></th><th>best</th><th>median</th></tr>
-				</thead>
-				<tbody>
-					<tr><td>pp (tok/s)</td><td>{fmt(result.pp.best)}</td><td>{fmt(result.pp.median)}</td></tr>
-					<tr><td>tg (tok/s)</td><td>{fmt(result.tg.best)}</td><td>{fmt(result.tg.median)}</td></tr>
-					<tr><td>ttft (ms)</td><td colspan={2}>{result.ttft_ms}</td></tr>
-				</tbody>
-			</table>
+			<div id="results">
+				{#if result.stopped}
+					<div class="alert warn">
+						<b>Stopped early:</b> {result.stopped} — showing
+						{result.iterations.length} of {result.params.iters} iterations; the
+						aggregates use the completed runs.
+						{#if result.engine_log && result.engine_log.length > 0}
+							<pre>{result.engine_log.join('\n')}</pre>
+						{/if}
+					</div>
+				{/if}
 
-			<h3>Result JSON <button onclick={copyJson}>copy</button></h3>
-			<pre>{JSON.stringify(result, null, 2)}</pre>
+				<div class="stats">
+					<div class="stat">
+						<div class="num">{fmt(result.pp.best)}</div>
+						<div class="label">pp · tok/s (best)</div>
+						<div class="sub2">median {fmt(result.pp.median)}</div>
+					</div>
+					<div class="stat">
+						<div class="num">{fmt(result.tg.best)}</div>
+						<div class="label">tg · tok/s (best)</div>
+						<div class="sub2">median {fmt(result.tg.median)}</div>
+					</div>
+					<div class="stat">
+						<div class="num">{fmtMs(result.ttft_ms)}</div>
+						<div class="label">ttft · ms</div>
+						<div class="sub2">time to first token</div>
+					</div>
+				</div>
+
+				<details class="json">
+					<summary>
+						Show result JSON
+						<button
+							class="copy"
+							onclick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								copyJson();
+							}}
+						>{copied ? 'Copied ✓' : 'Copy'}</button>
+					</summary>
+					<pre>{JSON.stringify(result, null, 2)}</pre>
+				</details>
+			</div>
 		{/if}
 	</section>
 
 	<footer>
 		<p class="hint">
-			<b>bench v4 — marginal timing + chat templates</b> (tg from t₁₂₈ − t₁; wall-clock is
-			preferred, the engine's own counters are shown as reference — "eng"
-			columns). If you do not see the eng columns you are running a stale
-			build — rebuild and hard-refresh. Models download once and are kept in
-			the browser's Cache
-			Storage. The inference engine runs in a Web Worker (LiteRT-LM WASM +
-			WebGPU, loaded dynamically from the pinned <code>@litert-lm/core</code>
-			build).
+			<b>bench v5</b> — marginal timing (tg from t₁₂₈ − t₁), chat templates,
+			partial results on engine OOM. Wall-clock is preferred; the engine's own
+			counters are shown as reference ("eng" columns). Models download once and
+			are kept in the browser's Cache Storage. The inference engine runs in a
+			Web Worker (LiteRT-LM WASM + WebGPU, pinned <code>@litert-lm/core</code> build).
 		</p>
 	</footer>
 </main>
 
 <style>
-	main {
-		font-family: system-ui, sans-serif;
-		max-width: 720px;
-		margin: 2rem auto;
+	:root {
+		--bg: #f5f6f8;
+		--card: #ffffff;
+		--card2: #fafbfc;
+		--text: #1a1d21;
+		--muted: #6b7280;
+		--border: #e5e7eb;
+		--accent: #4f46e5;
+		--accent-soft: #eef2ff;
+		--ok: #16a34a;
+		--ok-bg: #f0fdf4;
+		--warn: #b45309;
+		--warn-bg: #fffbeb;
+		--err: #dc2626;
+		--err-bg: #fef2f2;
+		--code-bg: #f3f4f6;
+		--rowhover: #f9fafb;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #0f1115;
+			--card: #171a21;
+			--card2: #1c2029;
+			--text: #e5e7eb;
+			--muted: #9ca3af;
+			--border: #272c37;
+			--accent: #818cf8;
+			--accent-soft: #1e1b4b;
+			--ok: #4ade80;
+			--ok-bg: #052e16;
+			--warn: #fbbf24;
+			--warn-bg: #451a03;
+			--err: #f87171;
+			--err-bg: #450a0a;
+			--code-bg: #0d0f13;
+			--rowhover: #1c2029;
+		}
+	}
+
+	* { box-sizing: border-box; }
+	:global(body) {
+		background: var(--bg);
+		color: var(--text);
+		font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+		margin: 0;
+	}
+	main, header {
+		max-width: 760px;
+		margin: 0 auto;
 		padding: 0 1rem;
 	}
-	/* the 9-column iteration table scrolls horizontally on narrow screens */
-	.tablewrap { overflow-x: auto; }
-	h1 { font-size: 1.4rem; margin-bottom: 0; }
-	.sub { color: #555; margin-top: 0.25rem; }
-	.hint { color: #777; font-size: 0.9rem; }
-	.warn {
-		border-left: 4px solid #c0392b;
-		background: #fdecea;
-		padding: 0.5rem 0.75rem;
-		margin: 0.75rem 0;
-		font-size: 0.9rem;
+
+	/* ── header ─────────────────────────────────────────────── */
+	header {
+		display: flex;
+		align-items: flex-end;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-top: 1.5rem;
+		flex-wrap: wrap;
 	}
-	.warn pre {
+	h1 { font-size: 1.5rem; margin: 0; letter-spacing: -0.02em; }
+	.sub { color: var(--muted); margin: 0.2rem 0 0; font-size: 0.92rem; }
+	.pills { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+	.pill {
 		font-size: 0.78rem;
-		overflow-x: auto;
-		white-space: pre-wrap;
-		margin: 0.5rem 0 0;
+		font-weight: 600;
+		padding: 0.3rem 0.7rem;
+		border-radius: 999px;
+		border: 1px solid var(--border);
+		background: var(--card);
+		white-space: nowrap;
 	}
-	h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+	.pill.backend { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+	.pill.ready { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+	.pill.busy { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+	.pill.error { background: var(--err-bg); border-color: var(--err); color: var(--err); }
+	.pill.idle { color: var(--muted); }
+
+	/* ── cards & sections ─────────────────────────────────────── */
+	.card {
+		background: var(--card);
+		border: 1px solid var(--border);
+		border-radius: 14px;
+		padding: 1.1rem 1.25rem 1.25rem;
+		margin: 1rem 0;
+		box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+	}
+	h2 {
+		font-size: 1.05rem;
+		margin: 0 0 0.75rem;
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		letter-spacing: -0.01em;
+	}
+	.step {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.5rem;
+		height: 1.5rem;
+		flex: none;
+		border-radius: 50%;
+		background: var(--accent);
+		color: #fff;
+		font-size: 0.85rem;
+		font-weight: 700;
+	}
 	h3 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
-	.row { display: flex; gap: 0.5rem; }
-	.grow { flex: 1; }
-	select, button {
+	.hint { color: var(--muted); font-size: 0.9rem; }
+	code {
+		background: var(--code-bg);
+		border-radius: 4px;
+		padding: 0.1rem 0.35rem;
+		font-size: 0.88em;
+	}
+
+	/* ── buttons & inputs ─────────────────────────────────────── */
+	button {
 		font: inherit;
-		padding: 0.4rem 0.8rem;
-	}
-	button.primary {
-		font-size: 1rem;
-		padding: 0.5rem 1.2rem;
+		font-weight: 600;
+		color: var(--text);
+		padding: 0.45rem 0.9rem;
+		border: 1px solid var(--border);
+		border-radius: 9px;
+		background: var(--card);
 		cursor: pointer;
+		transition: filter 120ms, background 120ms;
 	}
-	button:disabled { opacity: 0.5; cursor: default; }
-	.status { margin: 0.5rem 0; }
-	.ok { color: #0a0; font-weight: bold; }
-	.err { color: #a00; }
-	progress { width: 100%; margin-top: 0.4rem; }
-	.checks { list-style: none; padding-left: 0.25rem; }
+	button:hover { filter: brightness(1.04); }
+	button:disabled { opacity: 0.55; cursor: default; }
+	button.primary {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #fff;
+	}
+	button.run { width: 100%; padding: 0.7rem 1rem; font-size: 1.02rem; margin-top: 0.5rem; }
+	select {
+		font: inherit;
+		width: 100%;
+		padding: 0.5rem 0.8rem;
+		border: 1px solid var(--border);
+		border-radius: 9px;
+		background: var(--card);
+		color: var(--text);
+	}
+	progress {
+		width: 100%;
+		height: 0.55rem;
+		margin-top: 0.4rem;
+		accent-color: var(--accent);
+	}
+	progress.benchprogress { margin: 0.6rem 0 0; }
+
+	/* ── status & alerts ──────────────────────────────────────── */
+	.status { margin: 0.6rem 0 0; }
+	.ok { color: var(--ok); font-weight: 600; }
+	.err { color: var(--err); }
+	.busy { color: var(--accent); font-weight: 600; }
+	.alert {
+		border-radius: 10px;
+		padding: 0.6rem 0.9rem;
+		margin: 0.75rem 0;
+		font-size: 0.92rem;
+		border: 1px solid;
+	}
+	.alert.err { background: var(--err-bg); border-color: var(--err); color: var(--err); }
+	.alert.warn { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); }
+	.alert pre {
+		margin: 0.5rem 0 0;
+		font-size: 0.78rem;
+		white-space: pre-wrap;
+		overflow-x: auto;
+	}
+
+	/* ── compatibility checks ─────────────────────────────────── */
+	.checks {
+		list-style: none;
+		margin: 0.5rem 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+		gap: 0.3rem 1.25rem;
+		font-size: 0.92rem;
+	}
 	.cpufallback {
 		display: flex;
-		gap: 0.5rem;
+		gap: 0.6rem;
 		align-items: baseline;
-		margin: 0.75rem 0;
+		margin: 0.9rem 0 0.25rem;
 		cursor: pointer;
+		padding: 0.6rem 0.75rem;
+		border: 1px dashed var(--border);
+		border-radius: 10px;
 	}
-	.cpufallback input { width: 1.1rem; height: 1.1rem; flex: none; }
-	details { margin: 0.75rem 0; }
+	.cpufallback:hover { border-color: var(--accent); }
+	.cpufallback input { width: 1.15rem; height: 1.15rem; flex: none; accent-color: var(--accent); }
+	.cpufallback .hint { display: block; margin-top: 0.15rem; }
+	details { margin: 0.9rem 0 0; }
 	details summary { cursor: pointer; font-weight: 600; }
-	details p, details li { max-width: 65ch; }
-	table { border-collapse: collapse; margin: 0.75rem 0; }
-	td, th { border: 1px solid #ccc; padding: 0.35rem 0.7rem; text-align: right; }
-	td:first-child, th:first-child { text-align: left; }
+	details p, details li { max-width: 68ch; }
+
+	/* ── tables ───────────────────────────────────────────────── */
+	.tablewrap { overflow-x: auto; margin: 0.75rem 0; }
+	table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+	th {
+		color: var(--muted);
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		padding: 0.45rem 0.6rem;
+		border-bottom: 2px solid var(--border);
+		text-align: right;
+		white-space: nowrap;
+	}
+	td {
+		padding: 0.5rem 0.6rem;
+		text-align: right;
+		border-bottom: 1px solid var(--border);
+		white-space: nowrap;
+	}
+	th:first-child, td:first-child { text-align: left; }
+	tbody tr:hover { background: var(--rowhover); }
+
+	/* ── results ──────────────────────────────────────────────── */
+	#results { scroll-margin-top: 1rem; }
+	.stats {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.7rem;
+		margin: 0.9rem 0;
+	}
+	.stat {
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		padding: 0.8rem 0.9rem;
+		background: var(--card2);
+		text-align: center;
+	}
+	.stat .num {
+		font-size: 1.7rem;
+		font-weight: 750;
+		letter-spacing: -0.03em;
+		font-variant-numeric: tabular-nums;
+		color: var(--accent);
+	}
+	.stat .label { font-size: 0.78rem; font-weight: 600; margin-top: 0.15rem; }
+	.stat .sub2 { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; }
+	details.json { margin-top: 0.5rem; }
+	details.json summary {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		font-weight: 600;
+	}
+	button.copy { font-size: 0.82rem; padding: 0.25rem 0.7rem; }
 	pre {
-		background: #f4f4f4;
-		padding: 1rem;
+		background: var(--code-bg);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		padding: 0.9rem 1rem;
 		overflow-x: auto;
 		white-space: pre-wrap;
 		word-break: break-all;
+		font-size: 0.82rem;
 	}
-	footer { margin-top: 2rem; border-top: 1px solid #ddd; padding-top: 0.75rem; }
 
-	/* ── mobile ─────────────────────────────────────────────── */
+	footer { margin: 1.5rem 0 2.5rem; }
+	footer .hint { border-top: 1px solid var(--border); padding-top: 0.75rem; }
+
+	/* ── mobile ───────────────────────────────────────────────── */
 	@media (max-width: 640px) {
-		main { margin: 0.75rem auto; padding: 0 0.75rem; }
-		h1 { font-size: 1.2rem; }
-		h2 { font-size: 1rem; margin-top: 1.25rem; }
-		select, button { font-size: 1rem; }
+		header { margin-top: 0.9rem; }
+		main { padding: 0 0.75rem; }
+		h1 { font-size: 1.25rem; }
+		.card { padding: 0.9rem; border-radius: 12px; }
 		button { min-height: 44px; } /* comfortable tap target */
-		button.primary { width: 100%; padding: 0.65rem 1rem; }
+		.stats { gap: 0.5rem; }
+		.stat .num { font-size: 1.3rem; }
 		table { font-size: 0.85rem; }
-		td, th { padding: 0.3rem 0.5rem; }
-		pre { font-size: 0.78rem; padding: 0.6rem; }
+		td, th { padding: 0.4rem 0.5rem; }
+		pre { font-size: 0.76rem; padding: 0.6rem; }
 		.hint { font-size: 0.85rem; }
 	}
 </style>
