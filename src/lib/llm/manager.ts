@@ -67,10 +67,19 @@ let loadingToken = 0;
 /** When true, a failed WebGPU probe falls back to the WASM/CPU engine
  *  instead of refusing (explicit user opt-in — the UI checkbox). */
 let allowCpuFallback = false;
+/** When true, a failed WebGPU probe does NOT block: the load proceeds on
+ *  WebGPU anyway (explicit user consent — the UI checkbox). Takes
+ *  precedence over the CPU fallback. */
+let forceWebGpu = false;
 
 /** Opt in to the WASM/CPU fallback when WebGPU is unavailable/broken. */
 export function setAllowCpuFallback(v: boolean): void {
 	allowCpuFallback = v;
+}
+
+/** Proceed on WebGPU even when the probe reports problems (user consent). */
+export function setForceWebGpu(v: boolean): void {
+	forceWebGpu = v;
 }
 
 function setState(patch: Partial<LlmState>): void {
@@ -133,17 +142,23 @@ async function loadModel(model: LlmModel): Promise<void> {
 		// on a broken/CPU path is wasted bandwidth, so fail fast.
 		const probe = await probeWebGpu();
 		if (probe.verdict !== 'ok') {
-			if (!allowCpuFallback) {
+			if (forceWebGpu) {
+				// Explicit consent: proceed on WebGPU even though the probe
+				// reported problems (the user accepts the zero-token risk).
+				setState({ backend: 'webgpu' });
+			} else if (!allowCpuFallback) {
 				setStatus({
 					state: 'error',
 					message:
 						summarizeProbe(probe) +
-						' Nothing was downloaded. (Tick “Allow WASM/CPU fallback” to run on the CPU instead.)'
+						' Nothing was downloaded. (Tick “Allow WASM/CPU fallback” to run on '
+						+ 'the CPU, or “Force WebGPU anyway” to accept the risk and proceed.)'
 			});
 				return;
+			} else {
+				// Explicit opt-in: proceed on the WASM/CPU engine.
+				setState({ backend: 'wasm' });
 			}
-			// Explicit opt-in: proceed on the WASM/CPU engine.
-			setState({ backend: 'wasm' });
 		} else {
 			setState({ backend: 'webgpu' });
 		}

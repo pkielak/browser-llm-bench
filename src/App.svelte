@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { MODELS, formatBytes, getModel } from './lib/llm/models';
-	import { llm, selectModel, setAllowCpuFallback } from './lib/llm/manager';
+	import { llm, selectModel, setAllowCpuFallback, setForceWebGpu } from './lib/llm/manager';
 	import type { LlmState } from './lib/llm/types';
 	import { runBench, type BenchIteration, type BenchResult } from './lib/bench';
 	import { probeWebGpu, summarizeProbe, type WebGpuProbeResult } from './lib/llm/webgpu-probe';
@@ -52,6 +52,7 @@
 	});
 
 	let allowCpu = $state(false);
+	let forceGpu = $state(false);
 	let benching = $state(false);
 	let iterations: BenchIteration[] = $state([]);
 	let result: BenchResult | null = $state(null);
@@ -189,6 +190,26 @@
 			</span>
 		</label>
 
+		<label class="cpufallback">
+			<input
+				type="checkbox"
+				checked={forceGpu}
+				onchange={(e) => {
+					forceGpu = e.currentTarget.checked;
+					setForceWebGpu(forceGpu);
+					// The probe gate blocked the load and consent is now given → retry.
+					if (forceGpu && modelState.status.state === 'error' && model) pick(model.id);
+				}}
+			/>
+			<span>
+				<b>Force WebGPU anyway</b> — proceed even if the probe reports problems
+				<span class="hint"
+					>(explicit consent: the engine may load and then produce zero tokens — the classic
+					broken-driver failure. Useful if you believe the probe is wrong, e.g. a false
+					negative on an unusual GPU)</span>
+			</span>
+		</label>
+
 		<details>
 			<summary>What is WebGPU — and why does this benchmark need it?</summary>
 			<p>
@@ -289,6 +310,12 @@
 				(If the tab crashes on load, that is an out-of-memory kill — use a smaller model.)
 			</div>
 		{/if}
+		{#if forceGpu && probe && probe.verdict !== 'ok' && modelState.status.state === 'ready'}
+			<div class="alert warn">
+				⚠ <b>WebGPU forced</b> despite probe problems ({summarizeProbe(probe)}).
+				Zero tokens are possible — these numbers are at your consent.
+			</div>
+			{/if}
 		{#if benchError}
 			<div class="alert err">{benchError}</div>
 		{/if}
