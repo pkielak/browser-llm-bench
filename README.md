@@ -31,8 +31,9 @@ the most persuasive "is WebGPU worth it" number.
 **CPU path memory**: the WASM engine holds the model blob, a WASM weight
 heap, and the KV cache — roughly 3× the file size in RAM. A 2 GB model
 OOM-kills a phone tab (the 32-bit WASM heap is capped at 4 GB), so the
-catalogue includes small models (Qwen3 0.6B, Gemma 3 270M) that are the
-right size for CPU runs.
+catalogue includes small models (Qwen3 0.6B, SmolLM2 135M) that are the
+right size for CPU runs. (Catalogue entries must be **non-gated** HF repos —
+the app fetches anonymously; e.g. `gemma-3-270m-it` is terms-gated → 401.)
 
 ## Metrics (llama-bench convention)
 
