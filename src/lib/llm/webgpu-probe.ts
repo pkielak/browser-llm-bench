@@ -62,7 +62,7 @@ const FEATURE_NAMES = [
  */
 export async function probeWebGpu(
 	nav: Navigator = globalThis.navigator,
-	win: Window = globalThis as Window
+	win: Window = globalThis as unknown as Window
 ): Promise<WebGpuProbeResult> {
 	const base: WebGpuProbeResult = {
 		verdict: 'ok',
@@ -121,7 +121,7 @@ export async function probeWebGpu(
 
 	let device: GpuDeviceLike | null = null;
 	try {
-		device = await adapter.requestDevice?.();
+		device = (await adapter.requestDevice?.()) ?? null;
 	} catch {
 		device = null;
 	}
