@@ -4,6 +4,7 @@
 	import type { LlmState } from './lib/llm/types';
 	import { runBench, type BenchIteration, type BenchResult } from './lib/bench';
 	import { probeWebGpu, summarizeProbe, type WebGpuProbeResult } from './lib/llm/webgpu-probe';
+	import Accordion from './lib/Accordion.svelte';
 
 	// llama-bench convention: a fixed-length prompt for prefill (pp512 by
 	// default), a fixed 128-token generation, 3 iterations.
@@ -211,8 +212,7 @@
 			</span>
 		</label>
 
-		<details>
-			<summary>What is WebGPU — and why does this benchmark need it?</summary>
+		<Accordion title="What is WebGPU — and why does this benchmark need it?">
 			<p>
 				<b>WebGPU</b> is the modern browser API for graphics and <b>compute</b> —
 				the successor to WebGL, with a low-overhead interface to the
@@ -250,7 +250,7 @@
 				<li><b>Firefox</b> — 141+ (Windows first, late 2024)</li>
 				<li><b>Safari</b> — 26+ (macOS / iOS, 2025)</li>
 			</ul>
-		</details>
+		</Accordion>
 	</section>
 
 	<section class="card">
@@ -300,6 +300,37 @@
 			stream per token, so tg is measured as (t<sub>{TG}</sub> − t<sub>1</sub>) / ({TG} − 1)
 			and ttft as the pure-prefill part of the 1-token run
 		</p>
+
+		<Accordion title="How the numbers are measured">
+			<p>
+				<b>Marginal timing.</b> This engine build does not stream per token — the
+				whole generation arrives in one batch at the end — so each iteration
+				makes two runs, each from a fresh conversation (clean KV cache):
+			</p>
+			<ul>
+				<li>t<sub>1</sub> = prefill + 1 decode step</li>
+				<li>t<sub>128</sub> = prefill + 128 decode steps</li>
+				<li>1 decode step = (t<sub>128</sub> − t<sub>1</sub>) / 127 — the prefill cancels out → <b>tg</b> = 1000 / step</li>
+				<li>prefill = t<sub>1</sub> − 1 step → <b>ttft</b> (ms) and <b>pp</b> = prompt tokens / prefill</li>
+			</ul>
+			<p>
+				<b>Wall-clock is primary.</b> The engine's internal counters (the
+				"eng" columns) are recorded for reference only — in the pinned build
+				they are populated but self-inconsistent between runs.
+			</p>
+			<p>
+				<b>Prompt.</b> A natural English passage synthesized to the selected
+				token target (~4 chars/token), wrapped in the model's chat template.
+				llama-bench itself uses random vocabulary token IDs (exact counts);
+				the LiteRT API takes text only, so we approximate and record the
+				measured count in the result.
+			</p>
+			<p>
+				<b>Aggregation.</b> 3 iterations, best + median reported. If the engine
+				runs out of memory on a later iteration (the WASM heap is not released
+				between conversations), the completed iterations are still reported.
+			</p>
+		</Accordion>
 
 		<button
 			class="primary run"
@@ -388,20 +419,12 @@
 					</div>
 				</div>
 
-				<details class="json">
-					<summary>
-						Show result JSON
-						<button
-							class="copy"
-							onclick={(e) => {
-								e.preventDefault();
-								e.stopPropagation();
-								copyJson();
-							}}
-						>{copied ? 'Copied ✓' : 'Copy'}</button>
-					</summary>
+				<Accordion
+					title="Result JSON"
+					actions={() => <button class="copy" onclick={copyJson}>{copied ? 'Copied ✓' : 'Copy'}</button>}
+				>
 					<pre>{JSON.stringify(result, null, 2)}</pre>
-				</details>
+				</Accordion>
 			</div>
 		{/if}
 	</section>
@@ -627,9 +650,6 @@
 	.cpufallback:hover { border-color: var(--accent); }
 	.cpufallback input { width: 1.15rem; height: 1.15rem; flex: none; accent-color: var(--accent); }
 	.cpufallback .hint { display: block; margin-top: 0.15rem; }
-	details { margin: 0.9rem 0 0; }
-	details summary { cursor: pointer; font-weight: 600; }
-	details p, details li { max-width: 68ch; }
 
 	/* ── tables ───────────────────────────────────────────────── */
 	.tablewrap { overflow-x: auto; margin: 0.75rem 0; }
@@ -677,13 +697,6 @@
 	}
 	.stat .label { font-size: 0.78rem; font-weight: 600; margin-top: 0.15rem; }
 	.stat .sub2 { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; }
-	details.json { margin-top: 0.5rem; }
-	details.json summary {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		font-weight: 600;
-	}
 	button.copy { font-size: 0.82rem; padding: 0.25rem 0.7rem; }
 	pre {
 		background: var(--code-bg);
