@@ -73,3 +73,17 @@ jobs:
           git add -A
           git commit -m "pages: deploy from ${SRC}"
           git push -f origin gh-pages-deploy:gh-pages
+
+      - name: Mirror gh-pages to GitHub
+        env:
+          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          MIRROR_REPO: ${{ vars.MIRROR_REPO || 'pkielak/browser-llm-bench' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MIRROR_TOKEN:-}" ]; then
+            echo "::warning::No MIRROR_TOKEN — skipping GitHub gh-pages mirror."
+            exit 0
+          fi
+          # HEAD is on the orphan gh-pages-deploy branch (exactly build/).
+          git remote add github "https://x-access-token:${MIRROR_TOKEN}@github.com/${MIRROR_REPO}.git"
+          git push -f github gh-pages-deploy:gh-pages
