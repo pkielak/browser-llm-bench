@@ -1,10 +1,13 @@
 name: Build & deploy Pages
 
-# Builds whatever branch was pushed (except gh-pages itself) and deploys the
-# static build/ output to gh-pages in two flavours:
-# - **Gitea** gh-pages: with a source banner (branch @ commit) — the tailnet
-#   pages server (docker-compose `browser-llm-bench-pages`, :3004) polls it.
-# - **GitHub** gh-pages: clean, no banner — for GitHub Pages.
+# Builds whatever branch was pushed (except gh-pages itself) and force-deploys
+# the static build/ output to Gitea's gh-pages with a source banner (branch
+# @ commit). The tailnet pages server (docker-compose
+# `browser-llm-bench-pages`, :3004) polls this branch and serves it.
+#
+# The PUBLIC site on GitHub is a separate deployment: `.github/workflows/
+# pages.yaml` builds on GitHub and deploys via the Pages action (served from
+# the workflow artifact, no branch, no banner).
 #
 # Gitea Actions (act-based) has no $GITHUB_ENV, so everything happens in ONE
 # step — shell variables do not survive across steps.
@@ -35,10 +38,7 @@ jobs:
           npm run build
           test -d build || { echo "::error::no build/ output"; exit 1; }
 
-      - name: Deploy (GitHub clean, Gitea with banner)
-        env:
-          MIRROR_TOKEN: ${{ secrets.MIRROR_TOKEN }}
-          MIRROR_REPO: ${{ vars.MIRROR_REPO || 'pkielak/browser-llm-bench' }}
+      - name: Deploy to Gitea gh-pages (with banner)
         run: |
           set -euo pipefail
           git config user.name "pages-deploy"
@@ -57,15 +57,7 @@ jobs:
           git add -A
           git commit -m "pages: deploy from ${SRC}"
 
-          # 1) GitHub: clean, no banner
-          if [ -n "${MIRROR_TOKEN:-}" ]; then
-            git remote add github "https://x-access-token:${MIRROR_TOKEN}@github.com/${MIRROR_REPO}.git"
-            git push -f github gh-pages-deploy:gh-pages
-          else
-            echo "::warning::No MIRROR_TOKEN — skipping GitHub gh-pages mirror."
-          fi
-
-          # 2) Gitea: with source banner
+          # inject the source banner, then push
           BRANCH="$BRANCH" SRC="$SRC" node - <<'EOF'
           import fs from 'node:fs';
           const branch = process.env.BRANCH;
@@ -87,3 +79,4 @@ jobs:
           git add -A
           git commit -m "pages: banner ${BRANCH}@${SRC}"
           git push -f origin gh-pages-deploy:gh-pages
+

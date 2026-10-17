@@ -1,0 +1,49 @@
+name: Build & deploy to GitHub Pages
+
+# The public site is built HERE, on GitHub, and deployed via the Pages
+# action — the site is served from the workflow artifact, NOT from any
+# branch. In repo Settings → Pages the source must be set to
+# "GitHub Actions". (The Gitea side keeps its own bannered gh-pages
+# branch for the tailnet pages server — that is a separate deployment.)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build static site
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          test -d build || { echo "::error::no build/ output"; exit 1; }
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
