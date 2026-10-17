@@ -631,6 +631,7 @@
 					<div class="alert warn">
 						⚠ <b>Reference backend</b> — {result.notes}
 					</div>
+					<!-- The per-run table stays in the live area above — no duplicate here. -->
 					<div class="stats">
 						<div class="stat">
 							<div class="num">{fmt(result.tg_est.best)}</div>
@@ -642,28 +643,6 @@
 							<div class="label">ttft · ms (first chunk)</div>
 							<div class="sub2">median {fmtMs(result.ttft_ms.median)}</div>
 						</div>
-					</div>
-					<div class="tablewrap">
-						<table>
-							<thead>
-								<tr>
-									<th></th><th>ttft (ms)</th><th>total (ms)</th><th>chars</th>
-									<th>tokens (est)</th><th>tok/s (est)</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each result.iterations as it}
-									<tr>
-										<td>run {it.index}</td>
-										<td>{fmtMs(it.ttftMs)}</td>
-										<td>{fmtMs(it.totalMs)}</td>
-										<td>{it.textChars}</td>
-										<td>{it.tokensEst}</td>
-										<td>{fmt(it.tgEst)}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
 					</div>
 				{:else}
 
