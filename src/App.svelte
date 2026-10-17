@@ -416,7 +416,7 @@
 				<b>Chrome ships its own on-device LLM.</b> Since Chrome 148 (desktop),
 				the browser includes <b>Gemini Nano</b> — a small generative model that
 				runs entirely on your machine — and exposes it to web pages through
-				the <b>Prompt API</b> (<code>window.ai.language.model</code>).
+				the <b>Prompt API</b> (the <code>LanguageModel</code> global).
 			</p>
 			<ul>
 				<li><b>Model is opaque</b> — Chrome chooses the version and updates it with browser releases; there is nothing to pin. Its current size is visible at <code>chrome://on-device-internals</code></li>
