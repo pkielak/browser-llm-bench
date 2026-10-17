@@ -358,9 +358,11 @@
 					? ' (checking…)' 
 					: chromeElig?.availability === 'available'
 						? ' · available'
-						: chromeElig?.availability === 'downloading'
-							? ' · model downloading'
-							: ' (not available in this browser)'
+						: chromeElig?.availability === 'downloadable'
+							? ' · downloads on first run'
+							: chromeElig?.availability === 'downloading'
+								? ' · model downloading'
+								: ' (not available in this browser)'
 				}</option>
 			{#each MODELS as m}
 				<option
@@ -384,7 +386,7 @@
 		{:else}
 			<ul class="checks">
 				<li class={chromeElig.present ? 'ok' : 'err'}>
-					{chromeElig.present ? '✓' : '✗'} Prompt API (<code>window.ai.language.model</code>)
+					{chromeElig.present ? '✓' : '✗'} Prompt API (the <code>LanguageModel</code> global)
 				</li>
 				<li
 					class={

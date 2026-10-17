@@ -2,7 +2,8 @@
  * Chrome built-in AI (Gemini Nano) — a *reference* backend.
  *
  * Chrome ships its own on-device model (Gemini Nano) and exposes it through
- * the Prompt API (`window.ai.language.model`), stable in Chrome 148+.
+ * the Prompt API — the global <code>LanguageModel</code> class (no
+ * namespace) — stable in Chrome 148+.
  * Unlike the LiteRT path it is NOT a benchmark-grade backend:
  *
  * - the model is opaque (Chrome's choice, updated with the browser — not
@@ -24,13 +25,16 @@
 import { buildBenchPrompt } from './bench';
 
 // Structural typings for the slice of the Prompt API we use (Chrome 148+;
-// the full set is in the @types/dom-chromium-ai package).
+// the full set is in the @types/dom-chromium-ai package). The API is a
+// plain GLOBAL — `LanguageModel` — with no namespace.
+type AiAvailability = 'unavailable' | 'downloadable' | 'downloading' | 'available';
 interface AiMonitor {
 	addEventListener(type: string, cb: (e: { loaded: number }) => void): void;
 }
 interface AiSession {
 	promptStreaming(prompt: string, options?: { signal?: AbortSignal }): ReadableStream<string>;
 	reset?(): Promise<void>;
+	destroy(): void;
 	contextUsage?: number;
 	contextWindow?: number;
 }
@@ -38,7 +42,7 @@ interface AiLanguageModel {
 	availability(options?: {
 		expectedInputs: { type: string; languages: string[] }[];
 		expectedOutputs: { type: string; languages: string[] }[];
-	}): Promise<string>;
+	}): Promise<AiAvailability>;
 	create(options?: {
 		monitor?: (m: AiMonitor) => void;
 		signal?: AbortSignal;
@@ -48,8 +52,7 @@ interface AiLanguageModel {
 let session: AiSession | null = null;
 
 function languageModel(): AiLanguageModel | null {
-	const lm = (window as unknown as { ai?: { language?: { model?: { LanguageModel?: AiLanguageModel } } } })
-		?.ai?.language?.model?.LanguageModel;
+	const lm = (globalThis as unknown as { LanguageModel?: AiLanguageModel }).LanguageModel;
 	return typeof lm?.create === 'function' ? lm : null;
 }
 
@@ -61,9 +64,9 @@ export function chromeAiPresent(): boolean {
 export interface ChromeAiEligibility {
 	/** The Prompt API exists in this browser at all. */
 	present: boolean;
-	/** Chrome's own verdict: 'available' | 'downloading' | 'unavailable'
-	 *  (null when the API is absent). */
-	availability: string | null;
+	/** Chrome's own verdict: 'unavailable' | 'downloadable' | 'downloading'
+	 *  | 'available' (null when the API is absent). */
+	availability: AiAvailability | null;
 }
 
 /**
@@ -90,7 +93,14 @@ export function hasChromeAiSession(): boolean {
 }
 
 export function closeChromeAiSession(): void {
-	session = null;
+	if (session) {
+		try {
+			session.destroy();
+		} catch {
+			// ignore
+		}
+		session = null;
+	}
 }
 
 /**
