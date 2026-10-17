@@ -11,8 +11,7 @@ import type {
 /**
  * The **web** (browser) LiteRT-LM bridge.
  *
- * Borrowed from Pancratius (`src/lib/llm/runtime.ts`), trimmed to the web
- * target (no Capacitor dispatch) and extended with the benchmark surface
+ * Web target (no Capacitor dispatch), extended with the benchmark surface
  * (`reset` / `benchmark`).
  *
  * The LiteRT-LM web module (`@litert-lm/core`) is loaded **dynamically at

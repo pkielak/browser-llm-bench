@@ -4,8 +4,6 @@ import { NO_NETWORK_MESSAGE } from './network';
 /**
  * Model file caching.
  *
- * (Borrowed from Pancratius, `src/lib/llm/model-cache.ts` — same mechanism,
- * own cache name.)
  *
  * On-device model files are large (hundreds of MB to GB). We download each
  * model file **once** and store it in the browser's Cache Storage

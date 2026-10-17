@@ -1,8 +1,7 @@
 /**
  * Web (browser) LiteRT-LM runtime — **worker** side.
  *
- * Borrowed from Pancratius (`src/lib/llm/runtime-web-worker.ts`), extended
- * for benchmarking:
+ * Extended for benchmarking:
  * - `generate` accepts a per-call `maxOutputTokens`,
  * - a `reset` message drops the active conversation (fresh KV cache + fresh
  *   engine speed counters),

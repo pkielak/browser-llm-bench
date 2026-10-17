@@ -1,7 +1,7 @@
 import type { LlmBackend } from './types';
 
 /**
- * WebGPU detection. (Borrowed from Pancratius, `src/lib/llm/webgpu.ts`.)
+ * WebGPU detection.
  *
  * We only need to know whether a WebGPU device is exposed; LiteRT-LM picks
  * the engine automatically (WebGPU if present, WASM otherwise).

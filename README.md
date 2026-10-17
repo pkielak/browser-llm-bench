@@ -3,8 +3,7 @@
 Llama-bench-style performance benchmarks for small LLMs on **WebGPU**,
 running on **LiteRT** (LiteRT-LM, `@litert-lm/core`, WASM + WebGPU).
 
-A small Svelte 5 + Vite static app. The whole model **download + run
-mechanism is borrowed from [Pancratius](../Pancratius)**
+A small Svelte 5 + Vite static app. The model **download + run mechanism**
 (`src/lib/llm/`): the Hugging Face model catalogue, download-once with
 progress into the browser's Cache Storage, WebGPU/WASM auto-detection, and
 the LiteRT engine running in a Web Worker. On top of that sits a thin
@@ -82,7 +81,7 @@ src/
   App.svelte            the whole UI (model picker, status, bench, results)
   lib/
     bench.ts            the benchmark harness (pp / tg / ttft, best+median)
-    llm/                borrowed from Pancratius (web target):
+    llm/                LiteRT-LM runtime (web target):
       types.ts          the LlmRuntime / LlmStatus / LlmState seam
       models.ts         HF `litert-community` model catalogue (sizes included)
       webgpu.ts         WebGPU detection → backend selection

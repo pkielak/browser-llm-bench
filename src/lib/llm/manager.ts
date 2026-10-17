@@ -16,8 +16,7 @@ import type {
 /**
  * The local inference backend, exposed to the UI as a single reactive store.
  *
- * Borrowed from Pancratius (`src/lib/llm/manager.ts`), trimmed to the web
- * target (no Capacitor path, no background notifications, no i18n).
+ * Web target (no Capacitor path, no background notifications, no i18n).
  *
  * - **Model selection** lives here and is persisted in localStorage.
  * - **Model caching**: selecting a model downloads it once (via

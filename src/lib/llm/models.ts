@@ -3,8 +3,7 @@ import type { LlmModel } from './types';
 /**
  * Catalogue of on-device models the user can pick.
  *
- * Borrowed from Pancratius (`src/lib/llm/models.ts`), trimmed to the web
- * target: these are the web-optimized `.litertlm` builds published on Hugging
+ * These are the web-optimized `.litertlm` builds published on Hugging
  * Face by `litert-community`. Hugging Face serves them with permissive CORS
  * headers, so a `fetch` from any origin works.
  *

@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"description": "Llama-bench-style LLM performance benchmark — LiteRT-LM on WebGPU (mechanism borrowed from Pancratius)",
+	"description": "Llama-bench-style LLM performance benchmarks in the browser — LiteRT-LM on WebGPU / WASM, plus Chrome built-in AI as a reference",
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",

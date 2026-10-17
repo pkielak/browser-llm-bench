@@ -1,8 +1,7 @@
 /**
  * Local on-device inference (LiteRT-LM) — shared types.
  *
- * Borrowed from Pancratius (`src/lib/llm/types.ts`), trimmed to the web
- * target and extended with the benchmark surface (`reset` / `benchmark`).
+ * Web target, extended with the benchmark surface (`reset` / `benchmark`).
  *
  * These types form the stable seam between the LiteRT-LM runtime (which is
  * loaded dynamically at runtime and may change under us) and the rest of the
