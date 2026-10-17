@@ -4,10 +4,11 @@
 	import type { LlmModel, LlmState } from './lib/llm/types';
 	import { runBench, type BenchIteration, type BenchResult } from './lib/bench';
 	import {
-		chromeAiPresent,
+		checkChromeAiEligibility,
 		openChromeAiSession,
 		closeChromeAiSession,
 		runChromeAiBench,
+		type ChromeAiEligibility,
 		type ChromeAiIteration,
 		type ChromeAiResult
 	} from './lib/chrome-ai';
@@ -87,7 +88,8 @@
 	let result: (BenchResult | ChromeAiResult) | null = $state(null);
 
 	// Chrome built-in AI state (local — it never touches the LiteRT store).
-	let chromeAvailable = $state(chromeAiPresent());
+	let chromeElig: ChromeAiEligibility | null = $state(null);
+	let chromeChecking = $state(true);
 	let chromeSelected = $state(false);
 	let chromeSessionReady = $state(false);
 	let chromeBusy: string | null = $state(null);
@@ -95,6 +97,11 @@
 
 	const activeModel = $derived(chromeSelected ? CHROME_AI_MODEL : model);
 	const isChromeAi = $derived(activeModel?.id === CHROME_AI_ID);
+	// Selectable when the API exists AND Chrome reports the model as usable
+	// ('downloading' is fine — create() continues the download).
+	const chromeAvailable = $derived(
+		!!chromeElig?.present && chromeElig.availability !== 'unavailable'
+	);
 	const litertIterations = $derived(
 		iterations.filter((i) => !('tgEst' in i)) as BenchIteration[]
 	);
@@ -192,6 +199,17 @@
 	// No reactive reads inside → runs exactly once on mount.
 	$effect(() => {
 		void recheck();
+	});
+
+	// Same for the Chrome built-in AI eligibility (cheap, no download).
+	async function recheckChrome() {
+		chromeChecking = true;
+		chromeElig = null;
+		chromeElig = await checkChromeAiEligibility();
+		chromeChecking = false;
+	}
+	$effect(() => {
+		void recheckChrome();
 	});
 </script>
 
@@ -334,7 +352,15 @@
 			<option
 				value={CHROME_AI_ID}
 				disabled={!chromeAvailable}
-			>{CHROME_AI_MODEL.name} · reference{chromeAvailable ? '' : ' (not available in this browser)'}</option>
+			>{CHROME_AI_MODEL.name} · reference{
+				chromeChecking
+					? ' (checking…)' 
+					: chromeElig?.availability === 'available'
+						? ' · available'
+						: chromeElig?.availability === 'downloading'
+							? ' · model downloading'
+							: ' (not available in this browser)'
+				}</option>
 			{#each MODELS as m}
 				<option
 					value={m.id}
@@ -350,6 +376,36 @@
 		{/if}
 		{#if chromeError}
 			<div class="alert err">{chromeError}</div>
+		{/if}
+
+		{#if chromeChecking || !chromeElig}
+			<p class="hint">Checking Chrome built-in AI eligibility…</p>
+		{:else}
+			<ul class="checks">
+				<li class={chromeElig.present ? 'ok' : 'err'}>
+					{chromeElig.present ? '✓' : '✗'} Prompt API (<code>window.ai.language.model</code>)
+				</li>
+				<li
+					class={
+						chromeElig.availability === 'available'
+							? 'ok'
+							: chromeElig.availability === 'downloading'
+								? 'ok'
+								: 'err'
+					}
+				>
+					{chromeElig.availability === 'downloading' ? '↓' : chromeElig.availability === 'available' ? '✓' : '✗'}
+					Model availability: <code>{chromeElig.availability ?? 'n/a'}</code>
+				</li>
+			</ul>
+			{#if chromeElig.present && chromeElig.availability === 'unavailable'}
+				<p class="hint">
+					Chrome needs 22 GB free space and a GPU with &gt;4 GB VRAM (or 16 GB
+					RAM + 4 cores) — details at <code>chrome://on-device-internals</code>.
+					Desktop Chrome only; not on Android/iOS.
+				</p>
+			{/if}
+			<button onclick={() => void recheckChrome()}>Re-check</button>
 		{/if}
 
 		<Accordion title="Chrome built-in AI — what is it?">

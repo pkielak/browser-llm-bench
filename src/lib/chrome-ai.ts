@@ -53,9 +53,36 @@ function languageModel(): AiLanguageModel | null {
 	return typeof lm?.create === 'function' ? lm : null;
 }
 
-/** Cheap presence check for the picker (no async, no side effects). */
+/** Cheap presence check (no async, no side effects). */
 export function chromeAiPresent(): boolean {
 	return languageModel() !== null;
+}
+
+export interface ChromeAiEligibility {
+	/** The Prompt API exists in this browser at all. */
+	present: boolean;
+	/** Chrome's own verdict: 'available' | 'downloading' | 'unavailable'
+	 *  (null when the API is absent). */
+	availability: string | null;
+}
+
+/**
+ * Ask Chrome whether its built-in model can serve text→text prompts here.
+ * Cheap and side-effect-free — unlike `create()`, it does NOT start a
+ * download.
+ */
+export async function checkChromeAiEligibility(): Promise<ChromeAiEligibility> {
+	const lm = languageModel();
+	if (!lm) return { present: false, availability: null };
+	try {
+		const availability = await lm.availability({
+			expectedInputs: [{ type: 'text', languages: ['en'] }],
+			expectedOutputs: [{ type: 'text', languages: ['en'] }]
+		});
+		return { present: true, availability };
+	} catch {
+		return { present: true, availability: 'unavailable' };
+	}
 }
 
 export function hasChromeAiSession(): boolean {
