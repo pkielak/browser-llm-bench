@@ -13,6 +13,15 @@
 		type ChromeAiResult
 	} from './lib/chrome-ai';
 	import { probeWebGpu, summarizeProbe, type WebGpuProbeResult } from './lib/llm/webgpu-probe';
+	import {
+		loadSavedRuns,
+		saveRun,
+		deleteSavedRun,
+		shareUrl,
+		resultFromHash,
+		type AnyResult,
+		type SavedRun
+	} from './lib/saved-runs';
 	import Accordion from './lib/Accordion.svelte';
 
 	// llama-bench convention: a fixed-length prompt for prefill (pp512 by
@@ -182,6 +191,51 @@
 		setTimeout(() => (copied = false), 1500);
 	}
 
+	// ── Saving + sharing runs ────────────────────────────────────────
+	let savedRuns = $state<SavedRun[]>(loadSavedRuns());
+	let saveFlash = $state(false);
+	let shareCopied = $state(false);
+
+	function saveCurrentRun() {
+		if (!result) return;
+		savedRuns = saveRun(result);
+		saveFlash = true;
+		setTimeout(() => (saveFlash = false), 1500);
+	}
+
+	function removeSavedRun(id: string) {
+		savedRuns = deleteSavedRun(id);
+	}
+
+	/** Copy a self-contained share link (result embedded in the URL). */
+	function shareResult(r: AnyResult) {
+		void navigator.clipboard.writeText(shareUrl(r));
+		shareCopied = true;
+		setTimeout(() => (shareCopied = false), 1500);
+	}
+
+	/** Show a saved (or shared) result in the results view. */
+	function loadRun(run: SavedRun) {
+		result = run.result;
+		iterations = run.result.iterations;
+		benchError = null;
+		document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	const fmtDate = (ts: number): string =>
+		new Date(ts).toLocaleString(undefined, {
+			year: '2-digit', month: '2-digit', day: '2-digit',
+		hour: '2-digit', minute: '2-digit'
+	});
+
+	/** One-line metrics summary for a saved-run row. */
+	function runSummary(r: SavedRun['result']): string {
+		if (r.backend === 'chrome-builtin') {
+			return `tg(est) ${fmt(r.tg_est.best)} · ttft ${fmtMs(r.ttft_ms.best)} ms`;
+		}
+		return `pp${r.params.prompt_tokens} ${fmt(r.pp.best)} · tg ${fmt(r.tg.best)} · ttft ${fmtMs(r.ttft_ms)} ms`;
+	}
+
 	const fmt = (v: number | null | undefined): string =>
 		v == null ? '—' : String(Math.round(v * 10) / 10);
 	const fmtMs = (v: number | null | undefined): string =>
@@ -211,6 +265,15 @@
 	}
 	$effect(() => {
 		void recheckChrome();
+	});
+
+	// Shared link: `#r=…` carries a full result — restore it on load.
+	$effect(() => {
+		const shared = resultFromHash(location.hash);
+		if (shared) {
+			result = shared;
+			iterations = shared.iterations;
+		}
 	});
 </script>
 
@@ -627,6 +690,10 @@
 
 		{#if result}
 			<div id="results">
+				<div class="run-actions">
+					<button onclick={saveCurrentRun}>{saveFlash ? 'Saved ✓' : 'Save run'}</button>
+					<button onclick={() => result && shareResult(result)}>{shareCopied ? 'Link copied ✓' : 'Copy share link'}</button>
+				</div>
 				{#if result.backend === 'chrome-builtin'}
 					<div class="alert warn">
 						⚠ <b>Reference backend</b> — {result.notes}
@@ -687,10 +754,43 @@
 		{/if}
 	</section>
 
+	{#if savedRuns.length > 0}
+		<section class="card">
+			<h2>Saved runs <span class="hint">({savedRuns.length})</span></h2>
+			<p class="hint">
+				Stored in this browser (localStorage). <b>Load</b> re-opens the full
+				results view; <b>Share</b> copies a self-contained link with the result
+				embedded in the URL — no account, no server.
+			</p>
+			<div class="tablewrap">
+				<table>
+					<thead>
+						<tr><th>date</th><th>model</th><th>backend</th><th>metrics (best)</th><th></th></tr>
+					</thead>
+					<tbody>
+						{#each savedRuns as run (run.id)}
+							<tr>
+								<td>{fmtDate(run.saved_at)}</td>
+								<td>{run.result.model}</td>
+								<td>{run.result.backend}</td>
+								<td>{runSummary(run.result)}</td>
+								<td class="row-actions">
+									<button onclick={() => loadRun(run)}>Load</button>
+									<button onclick={() => shareResult(run.result)}>Share</button>
+									<button class="danger" title="Delete" onclick={() => removeSavedRun(run.id)}>✕</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+
 	<footer>
 		<p class="hint">
-			<b>bench v7</b> — llama-bench-style prompt lengths (pp256/pp512/pp1024),
-			Chrome built-in AI (Gemini Nano) reference backend,
+			<b>bench v8</b> — llama-bench-style prompt lengths (pp256/pp512/pp1024),
+			Chrome built-in AI (Gemini Nano) reference backend, save/share runs,
 			marginal timing (tg from t₁₂₈ − t₁), chat templates, partial results on
 			engine OOM. Wall-clock is preferred; the engine's own counters are shown
 			as reference ("eng" columns). Models download once and are kept in the
@@ -971,6 +1071,10 @@
 	.stat .sub2 { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; }
 	button.copy { font-size: 0.82rem; padding: 0.25rem 0.7rem; }
 	.json-head { display: flex; justify-content: flex-end; margin-bottom: 0.5rem; }
+	.run-actions { display: flex; gap: 0.6rem; margin-bottom: 0.9rem; }
+	.row-actions { display: flex; gap: 0.4rem; justify-content: flex-end; white-space: nowrap; }
+	.row-actions button { font-size: 0.8rem; padding: 0.2rem 0.55rem; }
+	button.danger { color: var(--err, #c0392b); }
 	pre {
 		background: var(--code-bg);
 		border: 1px solid var(--border);
