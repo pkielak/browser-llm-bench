@@ -22,6 +22,7 @@
 		type AnyResult,
 		type SavedRun
 	} from './lib/saved-runs';
+	import { renderShareCard } from './lib/share-card';
 	import Accordion from './lib/Accordion.svelte';
 
 	// llama-bench convention: a fixed-length prompt for prefill (pp512 by
@@ -213,6 +214,35 @@
 		shareCopied = true;
 		setTimeout(() => (shareCopied = false), 1500);
 	}
+
+	/** Download the result as an OG-style PNG card. */
+	async function downloadImage(r: AnyResult) {
+		try {
+			const blob = await renderShareCard(r);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `bench-${r.model.replace(/[^a-z0-9-]+/gi, '-')}.png`;
+			a.click();
+			setTimeout(() => URL.revokeObjectURL(url), 5000);
+		} catch (err) {
+			benchError = err instanceof Error ? err.message : String(err);
+		}
+	}
+
+	/** Copy the PNG card to the clipboard (paste into chat). */
+	async function copyImage(r: AnyResult) {
+		try {
+			const blob = await renderShareCard(r);
+			await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+			imgCopied = true;
+			setTimeout(() => (imgCopied = false), 1500);
+		} catch {
+			// ClipboardItem is unsupported (or blocked) — fall back to a download.
+			void downloadImage(r);
+		}
+	}
+	let imgCopied = $state(false);
 
 	/** Show a saved (or shared) result in the results view. */
 	function loadRun(run: SavedRun) {
@@ -693,6 +723,8 @@
 				<div class="run-actions">
 					<button onclick={saveCurrentRun}>{saveFlash ? 'Saved ✓' : 'Save run'}</button>
 					<button onclick={() => result && shareResult(result)}>{shareCopied ? 'Link copied ✓' : 'Copy share link'}</button>
+					<button onclick={() => result && void downloadImage(result)}>Download PNG</button>
+					<button onclick={() => result && void copyImage(result)}>{imgCopied ? 'Image copied ✓' : 'Copy image'}</button>
 				</div>
 				{#if result.backend === 'chrome-builtin'}
 					<div class="alert warn">
