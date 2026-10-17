@@ -34,7 +34,7 @@
 		id: CHROME_AI_ID,
 		name: 'Chrome built-in AI (Gemini Nano)',
 		description:
-			'Reference backend — Chrome’s own on-device model. No model download, no WebGPU probe (Chrome owns the engine). Metrics are estimates: the API exposes no token counts or output-length control.',
+			'Reference backend — Chrome’s own on-device model (Chrome downloads it once per profile on first use — no download of ours), no WebGPU probe. Metrics are estimates: the API exposes no token counts or output-length control.',
 		url: '',
 		sizeBytes: 0
 	};
@@ -432,7 +432,7 @@
 				</p>
 				<ul>
 					<li><b>Model is opaque</b> — Chrome chooses the version and updates it with browser releases; there is nothing to pin. Its current size is visible at <code>chrome://on-device-internals</code> (on Linux: enable the debug pages first via <code>chrome://chrome-urls</code>)</li>
-					<li><b>Downloaded by Chrome, not by us</b> — on first use per origin Chrome fetches the model (the progress line above is Chrome's download); afterwards it runs fully offline and <b>no data leaves your device</b></li>
+					<li><b>Downloaded by Chrome, not by us</b> — <code>LanguageModel.create()</code> triggers Chrome's download on first use (the progress line above is that); it is stored <b>per Chrome profile, once per machine</b>, shared by all sites, and updated by Chrome with browser releases. Afterwards it runs fully offline and <b>no data leaves your device</b></li>
 					<li><b>Hardware requirements</b> — Windows 10/11, macOS 13+, Linux, or Chromebook Plus; 22 GB free space; a GPU with &gt;4 GB VRAM <i>or</i> 16 GB RAM + 4 cores. <b>Not available on Android/iOS</b></li>
 					<li><b>API surface</b> — <code>LanguageModel.create()</code> → a session with <code>prompt()</code> and <code>promptStreaming()</code>; no output-length control, no token counts, sampling parameters are origin-trial-gated</li>
 				</ul>
