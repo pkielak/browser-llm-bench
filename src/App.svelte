@@ -215,6 +215,13 @@
 		setTimeout(() => (shareCopied = false), 1500);
 	}
 
+	/** `YYYYmmdd-HHMMSS` local-time stamp for shareable file names. */
+	function stamp(): string {
+		const d = new Date();
+		const p = (n: number) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+	}
+
 	/** Download the result as an OG-style PNG card. */
 	async function downloadImage(r: AnyResult) {
 		try {
@@ -222,7 +229,7 @@
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
-			a.download = `bench-${r.model.replace(/[^a-z0-9-]+/gi, '-')}.png`;
+			a.download = `bench-${r.model.replace(/[^a-z0-9-]+/gi, '-')}-${stamp()}.png`;
 			a.click();
 			setTimeout(() => URL.revokeObjectURL(url), 5000);
 		} catch (err) {

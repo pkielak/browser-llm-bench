@@ -124,3 +124,7 @@ Notes:
   `@litert-lm/core` build (see `LITERT_VERSION` in `runtime-web-worker.ts`)
   — the JS module and its `wasm/` dir must stay the same version.
 - This is a device page: run it on the hardware you're measuring.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
