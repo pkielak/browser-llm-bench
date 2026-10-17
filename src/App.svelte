@@ -350,104 +350,125 @@
 	<section class="card">
 		<h2><span class="step">2</span> Model</h2>
 		<select class="grow" value={activeModel?.id ?? ''} onchange={(e) => pick(e.currentTarget.value)}>
-			<option
-				value={CHROME_AI_ID}
-				disabled={!chromeAvailable}
-			>{CHROME_AI_MODEL.name} · reference{
-				chromeChecking
-					? ' (checking…)' 
-					: chromeElig?.availability === 'available'
-						? ' · available'
-						: chromeElig?.availability === 'downloadable'
-							? ' · downloads on first run'
-							: chromeElig?.availability === 'downloading'
-								? ' · model downloading'
-								: ' (not available in this browser)'
-				}</option>
-			{#each MODELS as m}
+			<optgroup label="Chrome built-in AI (reference)">
 				<option
-					value={m.id}
-					disabled={allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES}
-				>{m.name}{m.wasmOnly ? ' · CPU only' : ''} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
-			{/each}
+					value={CHROME_AI_ID}
+					disabled={!chromeAvailable}
+				>{CHROME_AI_MODEL.name} · reference{
+					chromeChecking
+						? ' (checking…)'
+						: chromeElig?.availability === 'available'
+							? ' · available'
+							: chromeElig?.availability === 'downloadable'
+								? ' · downloads on first run'
+								: chromeElig?.availability === 'downloading'
+									? ' · model downloading'
+									: ' (not available in this browser)'
+					}</option>
+			</optgroup>
+			<optgroup label="LiteRT-LM models">
+				{#each MODELS as m}
+					<option
+						value={m.id}
+						disabled={allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES}
+					>{m.name}{m.wasmOnly ? ' · CPU only' : ''} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
+				{/each}
+			</optgroup>
 		</select>
-		{#if activeModel}
-			<p class="hint">{activeModel.description}</p>
-		{/if}
-		{#if chromeSelected && chromeBusy}
-			<p class="hint">{chromeBusy}</p>
-		{/if}
-		{#if chromeError}
-			<div class="alert err">{chromeError}</div>
-		{/if}
 
-		{#if chromeChecking || !chromeElig}
-			<p class="hint">Checking Chrome built-in AI eligibility…</p>
-		{:else}
-			<ul class="checks">
-				<li class={chromeElig.present ? 'ok' : 'err'}>
-					{chromeElig.present ? '✓' : '✗'} Prompt API (the <code>LanguageModel</code> global)
-				</li>
-				<li
-					class={
-						chromeElig.availability === 'available'
-							? 'ok'
-							: chromeElig.availability === 'downloading'
-								? 'ok'
-								: 'err'
-					}
-				>
-					{chromeElig.availability === 'downloading' ? '↓' : chromeElig.availability === 'available' ? '✓' : '✗'}
-					Model availability: <code>{chromeElig.availability ?? 'n/a'}</code>
-				</li>
-			</ul>
-			{#if chromeElig.present && chromeElig.availability === 'unavailable'}
-				<p class="hint">
-					Chrome needs 22 GB free space and a GPU with &gt;4 GB VRAM (or 16 GB
-					RAM + 4 cores) — details at <code>chrome://on-device-internals</code>.
-					Desktop Chrome only; not on Android/iOS.
-				</p>
+		<!-- ── Backend 1: Chrome built-in AI (reference) ───────────────── -->
+		<div class="backendpanel">
+			<h3>Chrome built-in AI (Gemini Nano) · reference</h3>
+			<p class="hint">{CHROME_AI_MODEL.description}</p>
+			{#if chromeSelected && chromeBusy}
+				<p class="hint">{chromeBusy}</p>
 			{/if}
-			<button onclick={() => void recheckChrome()}>Re-check</button>
-		{/if}
-
-		<Accordion title="Chrome built-in AI — what is it?">
-			<p>
-				<b>Chrome ships its own on-device LLM.</b> Since Chrome 148 (desktop),
-				the browser includes <b>Gemini Nano</b> — a small generative model that
-				runs entirely on your machine — and exposes it to web pages through
-				the <b>Prompt API</b> (the <code>LanguageModel</code> global).
-			</p>
-			<ul>
-				<li><b>Model is opaque</b> — Chrome chooses the version and updates it with browser releases; there is nothing to pin. Its current size is visible at <code>chrome://on-device-internals</code></li>
-				<li><b>Downloaded by Chrome, not by us</b> — on first use per origin Chrome fetches the model (the progress bar above is Chrome's download); afterwards it runs fully offline and <b>no data leaves your device</b></li>
-				<li><b>Hardware requirements</b> — Windows 10/11, macOS 13+, Linux, or Chromebook Plus; 22 GB free space; a GPU with &gt;4 GB VRAM <i>or</i> 16 GB RAM + 4 cores. <b>Not available on Android/iOS</b></li>
-				<li><b>API surface</b> — <code>LanguageModel.create()</code> → a session with <code>prompt()</code> and <code>promptStreaming()</code>; no output-length control, no token counts, sampling parameters are origin-trial-gated</li>
-			</ul>
-			<p>
-				<b>Why it is a reference backend here:</b> the missing token counts and
-				output-length control make its metrics <b>estimates</b> (tg = chars/4 over
-				wall time, ttft = time to first chunk), and the model isn't comparable
-				with our pinned LiteRT builds. It answers a different question: what
-				does the OS-vendored on-device model do on <i>this exact hardware</i> —
-				a free baseline to put the LiteRT numbers in context.
-		</p>
-		</Accordion>
-
-		<div class="status">
-			{#if modelState.status.state === 'idle'}
-				<p>Model not loaded yet.</p>
-				<button class="primary" onclick={() => model && pick(model.id)}>Download model</button>
-			{:else if modelState.status.state === 'downloading'}
-				<p>Downloading model… {progressPct}%</p>
-				<progress value={progressPct} max={100}></progress>
-			{:else if modelState.status.state === 'loading'}
-				<p class="busy">Loading model into the {modelState.backend} engine…</p>
-			{:else if modelState.status.state === 'ready'}
-				<p class="ok">✓ Model ready.</p>
+			{#if chromeError}
+				<div class="alert err">{chromeError}</div>
+			{/if}
+			{#if chromeChecking || !chromeElig}
+				<p class="hint">Checking eligibility…</p>
 			{:else}
-				<p class="err">{modelState.status.message}</p>
-				<button onclick={() => model && pick(model.id)}>Retry</button>
+				<ul class="checks">
+					<li class={chromeElig.present ? 'ok' : 'err'}>
+						{chromeElig.present ? '✓' : '✗'} Prompt API (the <code>LanguageModel</code> global)
+					</li>
+					<li
+						class={
+							chromeElig.availability === 'available'
+								? 'ok'
+								: chromeElig.availability === 'downloading'
+									? 'ok'
+									: 'err'
+						}
+					>
+						{chromeElig.availability === 'downloading' ? '↓' : chromeElig.availability === 'available' ? '✓' : '✗'}
+						Model availability: <code>{chromeElig.availability ?? 'n/a'}</code>
+					</li>
+				</ul>
+				{#if chromeElig.present && chromeElig.availability === 'unavailable'}
+					<div class="alert warn">
+						<b>Chrome can't run its model here. Check:</b>
+						<ul>
+							<li>at least <b>22 GB free</b> on the volume that holds your Chrome profile</li>
+							<li>a GPU with <b>&gt;4 GB VRAM</b>, or <b>16 GB RAM + 4 CPU cores</b></li>
+							<li>Chrome <b>148+</b> on a supported desktop OS (Windows 10/11, macOS 13+, Linux, Chromebook Plus) — <code>chrome://settings/help</code></li>
+							<li>on <b>Linux</b> the debug pages are disabled by default — enable them at <code>chrome://chrome-urls</code>, then inspect the model at <code>chrome://on-device-internals</code></li>
+						</ul>
+					</div>
+				{/if}
+				<button onclick={() => void recheckChrome()}>Re-check</button>
+			{/if}
+			<Accordion title="What is it?">
+				<p>
+					<b>Chrome ships its own on-device LLM.</b> Since Chrome 148 (desktop),
+					the browser includes <b>Gemini Nano</b> — a small generative model that
+					runs entirely on your machine — and exposes it to web pages through
+					the <b>Prompt API</b> (the <code>LanguageModel</code> global).
+				</p>
+				<ul>
+					<li><b>Model is opaque</b> — Chrome chooses the version and updates it with browser releases; there is nothing to pin. Its current size is visible at <code>chrome://on-device-internals</code> (on Linux: enable the debug pages first via <code>chrome://chrome-urls</code>)</li>
+					<li><b>Downloaded by Chrome, not by us</b> — on first use per origin Chrome fetches the model (the progress line above is Chrome's download); afterwards it runs fully offline and <b>no data leaves your device</b></li>
+					<li><b>Hardware requirements</b> — Windows 10/11, macOS 13+, Linux, or Chromebook Plus; 22 GB free space; a GPU with &gt;4 GB VRAM <i>or</i> 16 GB RAM + 4 cores. <b>Not available on Android/iOS</b></li>
+					<li><b>API surface</b> — <code>LanguageModel.create()</code> → a session with <code>prompt()</code> and <code>promptStreaming()</code>; no output-length control, no token counts, sampling parameters are origin-trial-gated</li>
+				</ul>
+				<p>
+					<b>Why it is a reference backend here:</b> the missing token counts and
+					output-length control make its metrics <b>estimates</b> (tg = chars/4 over
+					wall time, ttft = time to first chunk), and the model isn't comparable
+					with our pinned LiteRT builds. It answers a different question: what
+					does the OS-vendored on-device model do on <i>this exact hardware</i> —
+					a free baseline to put the LiteRT numbers in context.
+				</p>
+			</Accordion>
+		</div>
+
+		<!-- ── Backend 2: LiteRT-LM (primary) ────────────────────────────── -->
+		<div class="backendpanel">
+			<h3>LiteRT-LM models · primary</h3>
+			{#if isChromeAi}
+				<p class="hint">No LiteRT model is active — pick one above to download
+				and benchmark it on WebGPU (or WASM/CPU).</p>
+			{:else if model}
+				<p class="hint"><b>{model.name}</b> — {model.description}</p>
+			{/if}
+			{#if !isChromeAi}
+				<div class="status">
+					{#if modelState.status.state === 'idle'}
+						<p>Model not loaded yet.</p>
+						<button class="primary" onclick={() => model && pick(model.id)}>Download model</button>
+					{:else if modelState.status.state === 'downloading'}
+						<p>Downloading model… {progressPct}%</p>
+						<progress value={progressPct} max={100}></progress>
+					{:else if modelState.status.state === 'loading'}
+						<p class="busy">Loading model into the {modelState.backend} engine…</p>
+					{:else if modelState.status.state === 'ready'}
+						<p class="ok">✓ Model ready.</p>
+					{:else}
+						<p class="err">{modelState.status.message}</p>
+						<button onclick={() => model && pick(model.id)}>Retry</button>
+					{/if}
+				</div>
 			{/if}
 		</div>
 	</section>
@@ -856,6 +877,19 @@
 	}
 	.row label { font-weight: 600; font-size: 0.92rem; }
 	.row select { width: auto; }
+
+	/* Backend sub-panels in the Model section — each backend's texts and
+	   status live inside its own box, so nothing is ambiguous. */
+	.backendpanel {
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		border-radius: 10px;
+		padding: 0.75rem 1rem 0.9rem;
+		margin-top: 0.9rem;
+		background: var(--card2);
+	}
+	.backendpanel h3 { margin: 0 0 0.4rem; font-size: 1.02rem; }
+	.backendpanel .status { margin-top: 0.6rem; }
 
 	/* ── status & alerts ──────────────────────────────────────── */
 	.status { margin: 0.6rem 0 0; }
