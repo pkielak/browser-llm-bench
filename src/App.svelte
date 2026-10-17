@@ -99,9 +99,10 @@
 	const isChromeAi = $derived(activeModel?.id === CHROME_AI_ID);
 	// Selectable when the API exists AND Chrome reports the model as usable
 	// ('downloading' is fine — create() continues the download).
-	const chromeAvailable = $derived(
-		!!chromeElig?.present && chromeElig.availability !== 'unavailable'
-	);
+	const chromeAvailable = $derived.by(() => {
+		const e = chromeElig;
+		return !!e && e.present && e.availability !== 'unavailable';
+	});
 	const litertIterations = $derived(
 		iterations.filter((i) => !('tgEst' in i)) as BenchIteration[]
 	);
