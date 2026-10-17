@@ -352,6 +352,29 @@
 			<div class="alert err">{chromeError}</div>
 		{/if}
 
+		<Accordion title="Chrome built-in AI — what is it?">
+			<p>
+				<b>Chrome ships its own on-device LLM.</b> Since Chrome 148 (desktop),
+				the browser includes <b>Gemini Nano</b> — a small generative model that
+				runs entirely on your machine — and exposes it to web pages through
+				the <b>Prompt API</b> (<code>window.ai.language.model</code>).
+			</p>
+			<ul>
+				<li><b>Model is opaque</b> — Chrome chooses the version and updates it with browser releases; there is nothing to pin. Its current size is visible at <code>chrome://on-device-internals</code></li>
+				<li><b>Downloaded by Chrome, not by us</b> — on first use per origin Chrome fetches the model (the progress bar above is Chrome's download); afterwards it runs fully offline and <b>no data leaves your device</b></li>
+				<li><b>Hardware requirements</b> — Windows 10/11, macOS 13+, Linux, or Chromebook Plus; 22 GB free space; a GPU with &gt;4 GB VRAM <i>or</i> 16 GB RAM + 4 cores. <b>Not available on Android/iOS</b></li>
+				<li><b>API surface</b> — <code>LanguageModel.create()</code> → a session with <code>prompt()</code> and <code>promptStreaming()</code>; no output-length control, no token counts, sampling parameters are origin-trial-gated</li>
+			</ul>
+			<p>
+				<b>Why it is a reference backend here:</b> the missing token counts and
+				output-length control make its metrics <b>estimates</b> (tg = chars/4 over
+				wall time, ttft = time to first chunk), and the model isn't comparable
+				with our pinned LiteRT builds. It answers a different question: what
+				does the OS-vendored on-device model do on <i>this exact hardware</i> —
+				a free baseline to put the LiteRT numbers in context.
+		</p>
+		</Accordion>
+
 		<div class="status">
 			{#if modelState.status.state === 'idle'}
 				<p>Model not loaded yet.</p>
