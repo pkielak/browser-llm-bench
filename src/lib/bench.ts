@@ -53,7 +53,7 @@ const BASE_TEXT =
 	'keeper climbed his tower to log the first entries of a new day\'s weather book.';
 
 /** Synthesize a prompt of approximately `targetTokens` tokens. */
-function buildPrompt(targetTokens: number): string {
+export function buildBenchPrompt(targetTokens: number): string {
 	const targetChars = targetTokens * 4;
 	let out = BASE_TEXT;
 	while (out.length < targetChars) out += ' ' + BASE_TEXT;
@@ -139,7 +139,7 @@ export async function runBench(
 	// template: a raw prompt makes instruct models (e.g. Qwen3) emit an
 	// immediate EOS → zero text tokens, and the engine does not apply
 	// templates itself.
-	const rawPrompt = buildPrompt(params.promptTokens);
+	const rawPrompt = buildBenchPrompt(params.promptTokens);
 	const prompt = model.promptTemplate
 		? model.promptTemplate.split('{prompt}').join(rawPrompt)
 		: rawPrompt;

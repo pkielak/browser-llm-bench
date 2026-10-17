@@ -1,8 +1,16 @@
 <script lang="ts">
 	import { MODELS, formatBytes, getModel } from './lib/llm/models';
 	import { llm, selectModel, setAllowCpuFallback, setForceWebGpu } from './lib/llm/manager';
-	import type { LlmState } from './lib/llm/types';
+	import type { LlmModel, LlmState } from './lib/llm/types';
 	import { runBench, type BenchIteration, type BenchResult } from './lib/bench';
+	import {
+		chromeAiPresent,
+		openChromeAiSession,
+		closeChromeAiSession,
+		runChromeAiBench,
+		type ChromeAiIteration,
+		type ChromeAiResult
+	} from './lib/chrome-ai';
 	import { probeWebGpu, summarizeProbe, type WebGpuProbeResult } from './lib/llm/webgpu-probe';
 	import Accordion from './lib/Accordion.svelte';
 
@@ -16,6 +24,19 @@
 	// WASM heap is capped at 4 GB) — bigger models OOM on phones, so they
 	// are greyed out while the CPU fallback is enabled.
 	const WASM_SAFE_MAX_BYTES = 512 * 1024 * 1024;
+
+	// Reference backend: Chrome's own on-device model (Prompt API). Not a
+	// LiteRT model — a synthetic LlmModel so the picker and UI handle it
+	// uniformly.
+	const CHROME_AI_ID = 'chrome-ai';
+	const CHROME_AI_MODEL: LlmModel = {
+		id: CHROME_AI_ID,
+		name: 'Chrome built-in AI (Gemini Nano)',
+		description:
+			'Reference backend — Chrome’s own on-device model. No model download, no WebGPU probe (Chrome owns the engine). Metrics are estimates: the API exposes no token counts or output-length control.',
+		url: '',
+		sizeBytes: 0
+	};
 
 	// Mirror the store into a reactive local so the component updates.
 	let modelState: LlmState = $state({ modelId: null, activeModel: null, backend: 'wasm', status: { state: 'idle' } });
@@ -37,6 +58,12 @@
 
 	// Header status pill.
 	const statusInfo = $derived.by(() => {
+		if (chromeSelected) {
+			if (chromeError) return { cls: 'error', text: 'chrome ai error' };
+			if (chromeBusy) return { cls: 'busy', text: 'preparing chrome ai' };
+			if (chromeSessionReady) return { cls: 'ready', text: 'model ready' };
+			return { cls: 'idle', text: 'not loaded' };
+		}
 		const s = modelState.status.state;
 		switch (s) {
 			case 'idle':
@@ -56,8 +83,22 @@
 	let forceGpu = $state(false);
 	let promptTarget = $state(512);
 	let benching = $state(false);
-	let iterations: BenchIteration[] = $state([]);
-	let result: BenchResult | null = $state(null);
+	let iterations: (BenchIteration | ChromeAiIteration)[] = $state([]);
+	let result: (BenchResult | ChromeAiResult) | null = $state(null);
+
+	// Chrome built-in AI state (local — it never touches the LiteRT store).
+	let chromeAvailable = $state(chromeAiPresent());
+	let chromeSelected = $state(false);
+	let chromeSessionReady = $state(false);
+	let chromeBusy: string | null = $state(null);
+	let chromeError: string | null = $state(null);
+
+	const activeModel = $derived(chromeSelected ? CHROME_AI_MODEL : model);
+	const isChromeAi = $derived(activeModel?.id === CHROME_AI_ID);
+	const litertIterations = $derived(
+		iterations.filter((i) => !('tgEst' in i)) as BenchIteration[]
+	);
+	const chromeIterations = $derived(iterations.filter((i) => 'tgEst' in i) as ChromeAiIteration[]);
 	let benchError: string | null = $state(null);
 	let copied = $state(false);
 
@@ -70,7 +111,37 @@
 		result = null;
 		iterations = [];
 		benchError = null;
+		if (id === CHROME_AI_ID) {
+			void pickChromeAi();
+			return;
+		}
+		// Leaving the reference backend: drop its session (frees memory).
+		chromeSelected = false;
+		chromeSessionReady = false;
+		chromeBusy = null;
+		chromeError = null;
+		closeChromeAiSession();
 		selectModel(id);
+	}
+
+	async function pickChromeAi() {
+		chromeSelected = true;
+		chromeSessionReady = false;
+		chromeBusy = 'Creating session…';
+		chromeError = null;
+		closeChromeAiSession();
+		try {
+			// First use on this origin makes Chrome download its model —
+			// progress arrives via the monitor when Chrome provides it.
+			await openChromeAiSession(
+				(p) => (chromeBusy = `Downloading Chrome’s model ${Math.round(p * 100)}%`)
+			);
+			chromeBusy = null;
+			chromeSessionReady = true;
+		} catch (err) {
+			chromeBusy = null;
+			chromeError = err instanceof Error ? err.message : String(err);
+		}
 	}
 
 	async function bench() {
@@ -80,10 +151,14 @@
 		result = null;
 		benchError = null;
 		try {
-			result = await runBench(
-				{ promptTokens: promptTarget, tg: TG, iters: ITERS },
-				(it) => (iterations = [...iterations, it])
-			);
+			if (isChromeAi) {
+				result = await runChromeAiBench(promptTarget, ITERS, (it) => (iterations = [...iterations, it]));
+			} else {
+				result = await runBench(
+					{ promptTokens: promptTarget, tg: TG, iters: ITERS },
+					(it) => (iterations = [...iterations, it])
+				);
+			}
 			document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 		} catch (err) {
 			benchError = err instanceof Error ? err.message : String(err);
@@ -124,12 +199,12 @@
 	<div>
 		<h1>llm-bench</h1>
 		<p class="sub">
-			Llama-bench-style performance benchmark · LiteRT-LM on
-			<strong>{modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}</strong>
+			Llama-bench-style performance benchmark ·
+			{isChromeAi ? 'Chrome built-in AI (reference)' : `LiteRT-LM on ${modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}`}
 		</p>
 	</div>
 	<div class="pills">
-		<span class="pill backend">{modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}</span>
+		<span class="pill backend">{isChromeAi ? 'Chrome AI' : modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}</span>
 		<span class="pill {statusInfo.cls}">{statusInfo.text}</span>
 	</div>
 </header>
@@ -177,7 +252,7 @@
 						// The CPU path needs ~3× the file size in RAM — the big
 						// models OOM, so switch to the largest safe one.
 						const safe = MODELS.filter((m) => m.sizeBytes <= WASM_SAFE_MAX_BYTES);
-						if (model && model.sizeBytes > WASM_SAFE_MAX_BYTES && safe.length > 0) {
+						if (!chromeSelected && model && model.sizeBytes > WASM_SAFE_MAX_BYTES && safe.length > 0) {
 							pick(safe.sort((a, b) => b.sizeBytes - a.sizeBytes)[0].id);
 						} else if (modelState.status.state === 'error' && model) pick(model.id);
 					}
@@ -255,7 +330,11 @@
 
 	<section class="card">
 		<h2><span class="step">2</span> Model</h2>
-		<select class="grow" value={model?.id ?? ''} onchange={(e) => pick(e.currentTarget.value)}>
+		<select class="grow" value={activeModel?.id ?? ''} onchange={(e) => pick(e.currentTarget.value)}>
+			<option
+				value={CHROME_AI_ID}
+				disabled={!chromeAvailable}
+			>{CHROME_AI_MODEL.name} · reference{chromeAvailable ? '' : ' (not available in this browser)'}</option>
 			{#each MODELS as m}
 				<option
 					value={m.id}
@@ -263,8 +342,14 @@
 				>{m.name}{m.wasmOnly ? ' · CPU only' : ''} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
 			{/each}
 		</select>
-		{#if model}
-			<p class="hint">{model.description}</p>
+		{#if activeModel}
+			<p class="hint">{activeModel.description}</p>
+		{/if}
+		{#if chromeSelected && chromeBusy}
+			<p class="hint">{chromeBusy}</p>
+		{/if}
+		{#if chromeError}
+			<div class="alert err">{chromeError}</div>
 		{/if}
 
 		<div class="status">
@@ -295,11 +380,19 @@
 				{/each}
 			</select>
 		</div>
-		<p class="hint">
-			tg over {TG} tokens · {ITERS} iterations · best + median — the engine does not
-			stream per token, so tg is measured as (t<sub>{TG}</sub> − t<sub>1</sub>) / ({TG} − 1)
-			and ttft as the pure-prefill part of the 1-token run
-		</p>
+		{#if isChromeAi}
+			<p class="hint">
+				{ITERS} iterations · best + median — the Prompt API has no output-length
+				control, so a “~100 words” nudge keeps the runs comparable, and all
+				metrics are <b>estimates</b> (no token counts from the API)
+			</p>
+		{:else}
+			<p class="hint">
+				tg over {TG} tokens · {ITERS} iterations · best + median — the engine does not
+				stream per token, so tg is measured as (t<sub>{TG}</sub> − t<sub>1</sub>) / ({TG} − 1)
+				and ttft as the pure-prefill part of the 1-token run
+			</p>
+		{/if}
 
 		<Accordion title="How the numbers are measured">
 			<p>
@@ -330,11 +423,19 @@
 				runs out of memory on a later iteration (the WASM heap is not released
 				between conversations), the completed iterations are still reported.
 			</p>
+			<p>
+				<b>Chrome built-in AI (reference).</b> The optional entry benchmarks
+				Chrome’s own on-device Gemini Nano via the Prompt API. Its metrics
+				are estimates — no token counts, no output-length control, no
+				prefill/decode split: tg is chars/4 over wall time, ttft is time to
+				first chunk. It contextualizes the LiteRT numbers on the same
+				hardware; it is not meant to compete with them.
+			</p>
 		</Accordion>
 
 		<button
 			class="primary run"
-			disabled={benching || modelState.status.state !== 'ready'}
+			disabled={benching || (isChromeAi ? !chromeSessionReady : modelState.status.state !== 'ready')}
 			onclick={bench}
 		>
 			{benching ? `Running… iteration ${Math.min(iterations.length + 1, ITERS)}/${ITERS}` : 'Run benchmark'}
@@ -343,13 +444,13 @@
 			<progress class="benchprogress" value={benchPct} max={100}></progress>
 		{/if}
 
-		{#if modelState.backend === 'wasm' && modelState.status.state === 'ready'}
+		{#if !isChromeAi && modelState.backend === 'wasm' && modelState.status.state === 'ready'}
 			<div class="alert warn">
 				⚠ Running on <b>WASM/CPU</b> — the numbers are CPU performance, not WebGPU.
 				(If the tab crashes on load, that is an out-of-memory kill — use a smaller model.)
 			</div>
 		{/if}
-		{#if forceGpu && probe && probe.verdict !== 'ok' && modelState.status.state === 'ready'}
+		{#if !isChromeAi && forceGpu && probe && probe.verdict !== 'ok' && modelState.status.state === 'ready'}
 			<div class="alert warn">
 				⚠ <b>WebGPU forced</b> despite probe problems ({summarizeProbe(probe)}).
 				Zero tokens are possible — these numbers are at your consent.
@@ -359,9 +460,34 @@
 			<div class="alert err">{benchError}</div>
 		{/if}
 
-		{#if iterations.length > 0}
+		{#if isChromeAi && chromeIterations.length > 0}
 			<div class="tablewrap">
 				<table>
+					<thead>
+						<tr>
+							<th></th><th>ttft (ms)</th><th>total (ms)</th><th>chars</th>
+							<th>tokens (est)</th><th>tok/s (est)</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each chromeIterations as it}
+							<tr>
+								<td>run {it.index}</td>
+								<td>{fmtMs(it.ttftMs)}</td>
+								<td>{fmtMs(it.totalMs)}</td>
+								<td>{it.textChars}</td>
+								<td>{it.tokensEst}</td>
+								<td>{fmt(it.tgEst)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+
+		{#if !isChromeAi && litertIterations.length > 0}
+			<div class="tablewrap">
+			<table>
 					<thead>
 						<tr>
 							<th></th><th>pp (tok/s)</th><th>tg (tok/s)</th><th>ttft (ms)</th>
@@ -370,7 +496,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each iterations as it}
+						{#each litertIterations as it}
 							<tr>
 								<td>run {it.index}</td>
 								<td>{fmt(it.pp)}</td>
@@ -390,6 +516,46 @@
 
 		{#if result}
 			<div id="results">
+				{#if result.backend === 'chrome-builtin'}
+					<div class="alert warn">
+						⚠ <b>Reference backend</b> — {result.notes}
+					</div>
+					<div class="stats">
+						<div class="stat">
+							<div class="num">{fmt(result.tg_est.best)}</div>
+							<div class="label">tg · tok/s (est, best)</div>
+							<div class="sub2">median {fmt(result.tg_est.median)}</div>
+						</div>
+						<div class="stat">
+							<div class="num">{fmtMs(result.ttft_ms.best)}</div>
+							<div class="label">ttft · ms (first chunk)</div>
+							<div class="sub2">median {fmtMs(result.ttft_ms.median)}</div>
+						</div>
+					</div>
+					<div class="tablewrap">
+						<table>
+							<thead>
+								<tr>
+									<th></th><th>ttft (ms)</th><th>total (ms)</th><th>chars</th>
+									<th>tokens (est)</th><th>tok/s (est)</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each result.iterations as it}
+									<tr>
+										<td>run {it.index}</td>
+										<td>{fmtMs(it.ttftMs)}</td>
+										<td>{fmtMs(it.totalMs)}</td>
+										<td>{it.textChars}</td>
+										<td>{it.tokensEst}</td>
+										<td>{fmt(it.tgEst)}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{:else}
+
 				{#if result.stopped}
 					<div class="alert warn">
 						<b>Stopped early:</b> {result.stopped} — showing
@@ -419,6 +585,8 @@
 					</div>
 				</div>
 
+				{/if}
+
 				<Accordion title="Result JSON">
 					<div class="json-head">
 						<button class="copy" onclick={copyJson}>{copied ? 'Copied ✓' : 'Copy'}</button>
@@ -431,7 +599,8 @@
 
 	<footer>
 		<p class="hint">
-			<b>bench v6</b> — llama-bench-style prompt lengths (pp256/pp512/pp1024),
+			<b>bench v7</b> — llama-bench-style prompt lengths (pp256/pp512/pp1024),
+			Chrome built-in AI (Gemini Nano) reference backend,
 			marginal timing (tg from t₁₂₈ − t₁), chat templates, partial results on
 			engine OOM. Wall-clock is preferred; the engine's own counters are shown
 			as reference ("eng" columns). Models download once and are kept in the
