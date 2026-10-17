@@ -350,8 +350,9 @@
 	<section class="card">
 		<h2><span class="step">2</span> Model</h2>
 		<select class="grow" value={activeModel?.id ?? ''} onchange={(e) => pick(e.currentTarget.value)}>
-			<optgroup label="Chrome built-in AI (reference)">
-				<option
+			{#if chromeElig?.present === true}
+				<optgroup label="Chrome built-in AI (reference)">
+					<option
 					value={CHROME_AI_ID}
 					disabled={!chromeAvailable}
 				>{CHROME_AI_MODEL.name} · reference{
@@ -365,7 +366,8 @@
 									? ' · model downloading'
 									: ' (not available in this browser)'
 					}</option>
-			</optgroup>
+				</optgroup>
+			{/if}
 			<optgroup label="LiteRT-LM models">
 				{#each MODELS as m}
 					<option
@@ -376,7 +378,9 @@
 			</optgroup>
 		</select>
 
-		<!-- ── Backend 1: Chrome built-in AI (reference) ───────────────── -->
+		<!-- ── Backend 1: Chrome built-in AI (reference) — Chrome only:
+			     hidden in any browser without the LanguageModel global ── -->
+		{#if chromeElig?.present === true}
 		<div class="backendpanel">
 			<h3>Chrome built-in AI (Gemini Nano) · reference</h3>
 			<p class="hint">{CHROME_AI_MODEL.description}</p>
@@ -442,6 +446,7 @@
 				</p>
 			</Accordion>
 		</div>
+		{/if}
 
 		<!-- ── Backend 2: LiteRT-LM (primary) ────────────────────────────── -->
 		<div class="backendpanel">
@@ -526,14 +531,16 @@
 				runs out of memory on a later iteration (the WASM heap is not released
 				between conversations), the completed iterations are still reported.
 			</p>
-			<p>
-				<b>Chrome built-in AI (reference).</b> The optional entry benchmarks
-				Chrome’s own on-device Gemini Nano via the Prompt API. Its metrics
-				are estimates — no token counts, no output-length control, no
-				prefill/decode split: tg is chars/4 over wall time, ttft is time to
-				first chunk. It contextualizes the LiteRT numbers on the same
-				hardware; it is not meant to compete with them.
-			</p>
+			{#if chromeElig?.present === true}
+				<p>
+					<b>Chrome built-in AI (reference).</b> The optional entry benchmarks
+					Chrome’s own on-device Gemini Nano via the Prompt API. Its metrics
+					are estimates — no token counts, no output-length control, no
+					prefill/decode split: tg is chars/4 over wall time, ttft is time to
+					first chunk. It contextualizes the LiteRT numbers on the same
+					hardware; it is not meant to compete with them.
+				</p>
+			{/if}
 		</Accordion>
 
 		<button
