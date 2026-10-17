@@ -1,4 +1,4 @@
-# llm-bench
+# browser-llm-bench
 
 Llama-bench-style performance benchmarks for small LLMs on **WebGPU**,
 running on **LiteRT** (LiteRT-LM, `@litert-lm/core`, WASM + WebGPU).

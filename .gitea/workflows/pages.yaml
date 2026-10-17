@@ -2,7 +2,7 @@ name: Build & deploy Pages
 
 # Builds whatever branch was pushed (except gh-pages itself) and
 # force-deploys the static build/ output to gh-pages. The pages server
-# (docker-compose `llm-bench-pages`, :3004) polls this branch and serves
+# (docker-compose `browser-llm-bench-pages`, :3004) polls this branch and serves
 # it. The injected banner records the source branch + commit.
 
 on:
@@ -49,7 +49,7 @@ jobs:
           }
           const banner =
             '\t<div style="position:fixed;top:0;left:0;right:0;z-index:99999;padding:4px 8px;text-align:center;background:rgba(27,27,47,.55);color:#fff;font:12px/1.4 system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.35)">' +
-            'llm-bench pages build: branch <b>' + branch + '</b> @ <code>' + src +
+            'browser-llm-bench pages build: branch <b>' + branch + '</b> @ <code>' + src +
             '</code> &middot; served from <code>gh-pages</code></div>';
           fs.writeFileSync(path, html.replace(marker, marker + '\n' + banner, 1));
           console.log('banner injected: ' + branch + '@' + src);

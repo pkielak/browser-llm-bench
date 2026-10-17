@@ -216,7 +216,7 @@
 
 <header>
 	<div>
-		<h1>llm-bench</h1>
+		<h1>browser-llm-bench</h1>
 		<p class="sub">
 			Llama-bench-style performance benchmark ·
 			{isChromeAi ? 'Chrome built-in AI (reference)' : `LiteRT-LM on ${modelState.backend === 'webgpu' ? 'WebGPU' : 'WASM/CPU'}`}
