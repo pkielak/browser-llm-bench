@@ -371,7 +371,9 @@
 						// The CPU path needs ~3× the file size in RAM — the big
 						// models OOM, so switch to the largest safe one.
 						const safe = MODELS.filter((m) => m.sizeBytes <= WASM_SAFE_MAX_BYTES);
-						if (!chromeSelected && model && model.sizeBytes > WASM_SAFE_MAX_BYTES && safe.length > 0) {
+						// wasmOnly models run on CPU as their *only* backend — never
+						// auto-switch away from them (the OOM risk is disclosed in their description).
+						if (!chromeSelected && model && !model.wasmOnly && model.sizeBytes > WASM_SAFE_MAX_BYTES && safe.length > 0) {
 							pick(safe.sort((a, b) => b.sizeBytes - a.sizeBytes)[0].id);
 						} else if (modelState.status.state === 'error' && model) pick(model.id);
 					}
@@ -472,8 +474,8 @@
 				{#each MODELS as m}
 					<option
 						value={m.id}
-						disabled={allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES}
-					>{m.name}{m.wasmOnly ? ' · CPU only' : ''} — {formatBytes(m.sizeBytes)}{allowCpu && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
+						disabled={allowCpu && !m.wasmOnly && m.sizeBytes > WASM_SAFE_MAX_BYTES}
+					>{m.name}{m.wasmOnly ? ' · CPU only' : ''} — {formatBytes(m.sizeBytes)}{allowCpu && !m.wasmOnly && m.sizeBytes > WASM_SAFE_MAX_BYTES ? ' (too big for CPU)' : ''}</option>
 				{/each}
 			</optgroup>
 		</select>

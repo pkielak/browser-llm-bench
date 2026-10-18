@@ -58,8 +58,9 @@ export interface LlmModel {
 	/**
 	 * When true, this model loads ONLY on the WASM/CPU backend: its .litertlm
 	 * packaging (Android-oriented) uses file sections that the WebGPU path
-	 * of the pinned engine build cannot stream ("Streaming kTfLitePrefillDecode
-	 * models is not supported yet"). The manager hard-forces WASM for these,
+	 * of the pinned engine build cannot stream (e.g. "Streaming kTfLitePrefillDecode
+	 * models is not supported yet", "Streaming HF_Tokenizer_Zlib section is not
+	 * supported yet"). The manager hard-forces WASM for these,
 	 * even under "Force WebGPU anyway" — a known incompatibility, not a gamble.
 	 */
 	wasmOnly?: boolean;
